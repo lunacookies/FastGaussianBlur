@@ -135,12 +135,18 @@ simd_float4 *boxColors;
 		        {1, 1, 1, 0.25},
 		        {1, 1, 1, 0.25},
 		};
+		float blurRadii[] = {
+		        100,
+		        25,
+		        200,
+		};
 
 		[encoder endEncoding];
 		encoder = [self blurWithCommandBuffer:commandBuffer
 		                               target:drawable.texture
 		                            positions:positions
 		                                sizes:sizes
+		                            blurRadii:blurRadii
 		                                count:3];
 
 		[self drawBoxesWithEncoder:encoder
@@ -161,12 +167,16 @@ simd_float4 *boxColors;
 		simd_float4 colors[] = {
 		        {1, 1, 1, 0.25},
 		};
+		float blurRadii[] = {
+		        50,
+		};
 
 		[encoder endEncoding];
 		encoder = [self blurWithCommandBuffer:commandBuffer
 		                               target:drawable.texture
 		                            positions:positions
 		                                sizes:sizes
+		                            blurRadii:blurRadii
 		                                count:1];
 
 		[self drawBoxesWithEncoder:encoder
@@ -215,6 +225,7 @@ simd_float4 *boxColors;
                                               target:(id<MTLTexture>)target
                                            positions:(simd_float2 *)positions
                                                sizes:(simd_float2 *)sizes
+                                           blurRadii:(float *)blurRadii
                                                count:(uint64_t)count
 {
 	{
@@ -260,7 +271,9 @@ simd_float4 *boxColors;
 		[encoder setVertexBytes:positions length:sizeof(simd_float2) * count atIndex:2];
 		[encoder setVertexBytes:sizes length:sizeof(simd_float2) * count atIndex:3];
 		[encoder setFragmentBytes:&resolution length:sizeof(resolution) atIndex:0];
-		[encoder setFragmentBytes:&horizontal length:sizeof(horizontal) atIndex:1];
+		[encoder setFragmentBytes:&scaleFactor length:sizeof(scaleFactor) atIndex:1];
+		[encoder setFragmentBytes:&horizontal length:sizeof(horizontal) atIndex:2];
+		[encoder setFragmentBytes:blurRadii length:sizeof(float) * count atIndex:3];
 
 		if (horizontal)
 		{

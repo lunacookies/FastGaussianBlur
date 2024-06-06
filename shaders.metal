@@ -27,11 +27,11 @@ struct RasterizerData
 
 vertex RasterizerData
 VertexFunction(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]],
-        constant float2 &resolution, constant float &scaleFactor, const device float2 *positions,
+        constant float2 &resolution, constant float &scale_factor, const device float2 *positions,
         const device float2 *sizes, const device float4 *colors)
 {
-	float2 position = positions[instance_id] * scaleFactor;
-	float2 size = sizes[instance_id] * scaleFactor;
+	float2 position = positions[instance_id] * scale_factor;
+	float2 size = sizes[instance_id] * scale_factor;
 	float4 color = colors[instance_id];
 
 	RasterizerData output = {0};
@@ -52,37 +52,41 @@ struct BlurRasterizerData
 	float4 position [[position]];
 	float2 p0 [[flat]];
 	float2 p1 [[flat]];
+	uint instance_id;
 };
 
 vertex BlurRasterizerData
 BlurVertexFunction(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]],
-        constant float2 &resolution, constant float &scaleFactor, const device float2 *positions,
+        constant float2 &resolution, constant float &scale_factor, const device float2 *positions,
         const device float2 *sizes)
 {
-	float2 position = positions[instance_id] * scaleFactor;
-	float2 size = sizes[instance_id] * scaleFactor;
+	float2 position = positions[instance_id] * scale_factor;
+	float2 size = sizes[instance_id] * scale_factor;
 
 	BlurRasterizerData output = {0};
 	output.position = NDCFromScreenSpace(vertex_id, position, size, resolution);
 	output.p0 = position;
 	output.p1 = position + size;
+	output.instance_id = instance_id;
 	return output;
 }
 
 fragment float4
 BlurFragmentFunction(BlurRasterizerData input [[stage_in]], constant float2 &resolution,
-        constant uint &horizontal, metal::texture2d<float> behind)
+        constant float &scale_factor, constant uint &horizontal, const device float *blur_radii,
+        metal::texture2d<float> behind)
 {
+	float blur_radius = blur_radii[input.instance_id] * scale_factor;
+	float sigma = blur_radius * 0.2;
+	short kernel_radius = (short)blur_radius;
+
 	metal::sampler sampler(metal::address::mirrored_repeat);
 
 	float4 result = 0;
 	float total_weight = 0;
 
-	short blur_radius = 50;
-	float sigma = (float)blur_radius * 0.2;
-
-	float sample_offset_start = -blur_radius;
-	float sample_offset_end = blur_radius + 1;
+	float sample_offset_start = -kernel_radius;
+	float sample_offset_end = kernel_radius + 1;
 
 	if (horizontal)
 	{
