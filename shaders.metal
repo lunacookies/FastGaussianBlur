@@ -28,13 +28,14 @@ struct RasterizerData
 vertex RasterizerData
 VertexFunction(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]],
         constant float2 &resolution, constant float &scaleFactor, const device float2 *positions,
-        const device float3 *colors, constant float2 &size)
+        const device float2 *sizes, const device float3 *colors)
 {
 	float2 position = positions[instance_id] * scaleFactor;
+	float2 size = sizes[instance_id] * scaleFactor;
 	float3 color = colors[instance_id];
 
 	RasterizerData output = {0};
-	output.position = NDCFromScreenSpace(vertex_id, position, size * scaleFactor, resolution);
+	output.position = NDCFromScreenSpace(vertex_id, position, size, resolution);
 	output.color = float4(color, 1);
 	return output;
 }

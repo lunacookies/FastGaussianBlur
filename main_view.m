@@ -14,8 +14,8 @@ id<MTLRenderPipelineState> pipelineState;
 id<MTLRenderPipelineState> pipelineStateBlur;
 
 uint64_t boxCount;
-simd_float2 boxSize;
 simd_float2 *boxPositions;
+simd_float2 *boxSizes;
 simd_float3 *boxColors;
 
 - (instancetype)initWithFrame:(NSRect)frame
@@ -61,10 +61,11 @@ simd_float3 *boxColors;
 	uint64_t columns = 10;
 	boxCount = rows * columns;
 
-	boxSize = (simd_float2){40, 40};
+	simd_float2 size = {40, 40};
 	simd_float2 padding = {30, 30};
 
 	boxPositions = calloc(boxCount, sizeof(simd_float2));
+	boxSizes = calloc(boxCount, sizeof(simd_float2));
 	boxColors = calloc(boxCount, sizeof(simd_float3));
 
 	for (uint64_t y = 0; y < rows; y++)
@@ -75,7 +76,9 @@ simd_float3 *boxColors;
 
 			boxPositions[i].x = x + 1;
 			boxPositions[i].y = y + 1;
-			boxPositions[i] *= boxSize + padding;
+			boxPositions[i] *= size + padding;
+
+			boxSizes[i] = size;
 
 			boxColors[i].r = (float)arc4random_uniform(255) / 255;
 			boxColors[i].g = (float)arc4random_uniform(255) / 255;
@@ -92,41 +95,12 @@ simd_float3 *boxColors;
 
 	id<CAMetalDrawable> drawable = [metalLayer nextDrawable];
 
-	float scaleFactor = (float)self.window.backingScaleFactor;
-
-	{
-		MTLRenderPassDescriptor *descriptor =
-		        [MTLRenderPassDescriptor renderPassDescriptor];
-		descriptor.colorAttachments[0].texture = drawable.texture;
-		descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
-		descriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
-		descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.5, 0.5, 1);
-
-		id<MTLRenderCommandEncoder> encoder =
-		        [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
-
-		simd_float2 resolution = 0;
-		resolution.x = (float)self.frame.size.width;
-		resolution.y = (float)self.frame.size.height;
-		resolution *= scaleFactor;
-
-		[encoder setRenderPipelineState:pipelineState];
-
-		[encoder setVertexBytes:&resolution length:sizeof(resolution) atIndex:0];
-		[encoder setVertexBytes:&scaleFactor length:sizeof(scaleFactor) atIndex:1];
-		[encoder setVertexBytes:boxPositions
-		                 length:sizeof(simd_float2) * boxCount
-		                atIndex:2];
-		[encoder setVertexBytes:boxColors length:sizeof(simd_float3) * boxCount atIndex:3];
-		[encoder setVertexBytes:&boxSize length:sizeof(boxSize) atIndex:4];
-
-		[encoder drawPrimitives:MTLPrimitiveTypeTriangle
-		            vertexStart:0
-		            vertexCount:6
-		          instanceCount:boxCount];
-
-		[encoder endEncoding];
-	}
+	[self drawBoxesWithCommandBuffer:commandBuffer
+	                          target:drawable.texture
+	                       positions:boxPositions
+	                           sizes:boxSizes
+	                          colors:boxColors
+	                           count:boxCount];
 
 	{
 		simd_float2 positions[] = {
@@ -164,6 +138,45 @@ simd_float3 *boxColors;
 
 	[commandBuffer presentDrawable:drawable];
 	[commandBuffer commit];
+}
+
+- (void)drawBoxesWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
+                            target:(id<MTLTexture>)target
+                         positions:(simd_float2 *)positions
+                             sizes:(simd_float2 *)sizes
+                            colors:(simd_float3 *)colors
+                             count:(uint64_t)count
+{
+	MTLRenderPassDescriptor *descriptor = [MTLRenderPassDescriptor renderPassDescriptor];
+	descriptor.colorAttachments[0].texture = target;
+	descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+	descriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
+	descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.5, 0.5, 1);
+
+	id<MTLRenderCommandEncoder> encoder =
+	        [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
+
+	float scaleFactor = (float)self.window.backingScaleFactor;
+
+	simd_float2 resolution = 0;
+	resolution.x = (float)self.frame.size.width;
+	resolution.y = (float)self.frame.size.height;
+	resolution *= scaleFactor;
+
+	[encoder setRenderPipelineState:pipelineState];
+
+	[encoder setVertexBytes:&resolution length:sizeof(resolution) atIndex:0];
+	[encoder setVertexBytes:&scaleFactor length:sizeof(scaleFactor) atIndex:1];
+	[encoder setVertexBytes:positions length:sizeof(simd_float2) * count atIndex:2];
+	[encoder setVertexBytes:sizes length:sizeof(simd_float2) * count atIndex:3];
+	[encoder setVertexBytes:colors length:sizeof(simd_float3) * count atIndex:4];
+
+	[encoder drawPrimitives:MTLPrimitiveTypeTriangle
+	            vertexStart:0
+	            vertexCount:6
+	          instanceCount:count];
+
+	[encoder endEncoding];
 }
 
 - (void)blurWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
