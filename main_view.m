@@ -103,13 +103,21 @@ simd_float4 *boxColors;
 
 	id<CAMetalDrawable> drawable = [metalLayer nextDrawable];
 
-	[self drawBoxesWithCommandBuffer:commandBuffer
-	                          target:drawable.texture
-	                       positions:boxPositions
-	                           sizes:boxSizes
-	                          colors:boxColors
-	                           count:boxCount
-	                           clear:1];
+	MTLRenderPassDescriptor *descriptor = [MTLRenderPassDescriptor renderPassDescriptor];
+	descriptor.colorAttachments[0].texture = drawable.texture;
+	descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+	descriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
+	descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.5, 0.5, 1);
+
+	id<MTLRenderCommandEncoder> encoder =
+	        [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
+
+	[self drawBoxesWithEncoder:encoder
+	                    target:drawable.texture
+	                 positions:boxPositions
+	                     sizes:boxSizes
+	                    colors:boxColors
+	                     count:boxCount];
 
 	{
 		simd_float2 positions[] = {
@@ -128,19 +136,19 @@ simd_float4 *boxColors;
 		        {1, 1, 1, 0.25},
 		};
 
-		[self blurWithCommandBuffer:commandBuffer
-		                     target:drawable.texture
-		                  positions:positions
-		                      sizes:sizes
-		                      count:3];
+		[encoder endEncoding];
+		encoder = [self blurWithCommandBuffer:commandBuffer
+		                               target:drawable.texture
+		                            positions:positions
+		                                sizes:sizes
+		                                count:3];
 
-		[self drawBoxesWithCommandBuffer:commandBuffer
-		                          target:drawable.texture
-		                       positions:positions
-		                           sizes:sizes
-		                          colors:colors
-		                           count:3
-		                           clear:0];
+		[self drawBoxesWithEncoder:encoder
+		                    target:drawable.texture
+		                 positions:positions
+		                     sizes:sizes
+		                    colors:colors
+		                     count:3];
 	}
 
 	{
@@ -154,50 +162,34 @@ simd_float4 *boxColors;
 		        {1, 1, 1, 0.25},
 		};
 
-		[self blurWithCommandBuffer:commandBuffer
-		                     target:drawable.texture
-		                  positions:positions
-		                      sizes:sizes
-		                      count:1];
+		[encoder endEncoding];
+		encoder = [self blurWithCommandBuffer:commandBuffer
+		                               target:drawable.texture
+		                            positions:positions
+		                                sizes:sizes
+		                                count:1];
 
-		[self drawBoxesWithCommandBuffer:commandBuffer
-		                          target:drawable.texture
-		                       positions:positions
-		                           sizes:sizes
-		                          colors:colors
-		                           count:1
-		                           clear:0];
+		[self drawBoxesWithEncoder:encoder
+		                    target:drawable.texture
+		                 positions:positions
+		                     sizes:sizes
+		                    colors:colors
+		                     count:1];
 	}
+
+	[encoder endEncoding];
 
 	[commandBuffer presentDrawable:drawable];
 	[commandBuffer commit];
 }
 
-- (void)drawBoxesWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
-                            target:(id<MTLTexture>)target
-                         positions:(simd_float2 *)positions
-                             sizes:(simd_float2 *)sizes
-                            colors:(simd_float4 *)colors
-                             count:(uint64_t)count
-                             clear:(uint32_t)clear
+- (void)drawBoxesWithEncoder:(id<MTLRenderCommandEncoder>)encoder
+                      target:(id<MTLTexture>)target
+                   positions:(simd_float2 *)positions
+                       sizes:(simd_float2 *)sizes
+                      colors:(simd_float4 *)colors
+                       count:(uint64_t)count
 {
-	MTLRenderPassDescriptor *descriptor = [MTLRenderPassDescriptor renderPassDescriptor];
-	descriptor.colorAttachments[0].texture = target;
-	descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
-
-	if (clear)
-	{
-		descriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
-		descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.5, 0.5, 1);
-	}
-	else
-	{
-		descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
-	}
-
-	id<MTLRenderCommandEncoder> encoder =
-	        [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
-
 	float scaleFactor = (float)self.window.backingScaleFactor;
 
 	simd_float2 resolution = 0;
@@ -217,15 +209,13 @@ simd_float4 *boxColors;
 	            vertexStart:0
 	            vertexCount:6
 	          instanceCount:count];
-
-	[encoder endEncoding];
 }
 
-- (void)blurWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
-                       target:(id<MTLTexture>)target
-                    positions:(simd_float2 *)positions
-                        sizes:(simd_float2 *)sizes
-                        count:(uint64_t)count
+- (id<MTLRenderCommandEncoder>)blurWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
+                                              target:(id<MTLTexture>)target
+                                           positions:(simd_float2 *)positions
+                                               sizes:(simd_float2 *)sizes
+                                               count:(uint64_t)count
 {
 	{
 		MTLBlitPassDescriptor *descriptor = [[MTLBlitPassDescriptor alloc] init];
@@ -241,6 +231,8 @@ simd_float4 *boxColors;
 	resolution.x = (float)self.frame.size.width;
 	resolution.y = (float)self.frame.size.height;
 	resolution *= scaleFactor;
+
+	id<MTLRenderCommandEncoder> encoder = nil;
 
 	for (uint32_t horizontal = 0; horizontal <= 1; horizontal++)
 	{
@@ -259,8 +251,7 @@ simd_float4 *boxColors;
 		descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
 		descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
 
-		id<MTLRenderCommandEncoder> encoder =
-		        [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
+		encoder = [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
 
 		[encoder setRenderPipelineState:pipelineStateBlur];
 
@@ -285,8 +276,13 @@ simd_float4 *boxColors;
 		            vertexCount:6
 		          instanceCount:count];
 
-		[encoder endEncoding];
+		if (!horizontal)
+		{
+			[encoder endEncoding];
+		}
 	}
+
+	return encoder;
 }
 
 - (void)viewDidChangeBackingProperties
