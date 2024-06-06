@@ -288,31 +288,29 @@ simd_float4 *boxColors;
 - (void)viewDidChangeBackingProperties
 {
 	[super viewDidChangeBackingProperties];
-	metalLayer.contentsScale = self.window.backingScaleFactor;
-	[self updateOffscreenTexture];
+	[self updateTextures];
 }
 
 - (void)setFrameSize:(NSSize)size
 {
 	[super setFrameSize:size];
+	[self updateTextures];
+}
 
-	float scaleFactor = (float)self.window.backingScaleFactor;
+- (void)updateTextures
+{
+	double scaleFactor = self.window.backingScaleFactor;
 	if (scaleFactor == 0)
 	{
 		return;
 	}
-	size.width *= scaleFactor;
-	size.height *= scaleFactor;
-	metalLayer.drawableSize = size;
-	[self updateOffscreenTexture];
-}
 
-- (void)updateOffscreenTexture
-{
-	float scaleFactor = (float)self.window.backingScaleFactor;
 	NSSize size = self.frame.size;
 	size.width *= scaleFactor;
 	size.height *= scaleFactor;
+
+	metalLayer.contentsScale = scaleFactor;
+	metalLayer.drawableSize = size;
 
 	MTLTextureDescriptor *descriptor = [[MTLTextureDescriptor alloc] init];
 	descriptor.width = (NSUInteger)size.width;
