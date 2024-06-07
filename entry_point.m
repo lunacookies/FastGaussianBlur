@@ -3,6 +3,7 @@
 @import QuartzCore;
 @import simd;
 
+#include "renderer.m"
 #include "main_view.m"
 #include "app_delegate.m"
 
