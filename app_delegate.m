@@ -29,6 +29,7 @@ CreateMenu(void)
 @interface AppDelegate : NSObject <NSApplicationDelegate>
 {
 	NSWindow *window;
+	MetalViewController *metalViewController;
 }
 @end
 
@@ -47,8 +48,8 @@ CreateMenu(void)
 	                                       backing:NSBackingStoreBuffered
 	                                         defer:NO];
 
-	MainView *view = [[MainView alloc] initWithFrame:rect];
-	window.contentView = view;
+	metalViewController = [[MetalViewController alloc] init];
+	window.contentView = metalViewController.view;
 
 	[window makeKeyAndOrderFront:nil];
 	[NSApp activate];

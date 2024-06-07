@@ -4,7 +4,7 @@
 @import simd;
 
 #include "renderer.m"
-#include "main_view.m"
+#include "metal_view_controller.m"
 #include "app_delegate.m"
 
 int
