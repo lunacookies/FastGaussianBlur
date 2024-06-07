@@ -8,6 +8,13 @@
 
 @implementation MetalViewController
 
+- (instancetype)init
+{
+	self = [super init];
+	self.title = @"Live Rendered View";
+	return self;
+}
+
 - (void)viewDidLoad
 {
 	[super viewDidLoad];

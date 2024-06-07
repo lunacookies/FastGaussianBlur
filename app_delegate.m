@@ -47,7 +47,8 @@ CreateMenu(void)
 	                                       backing:NSBackingStoreBuffered
 	                                         defer:NO];
 
-	window.contentViewController = [[MetalViewController alloc] init];
+	window.contentViewController = [[MainViewController alloc] init];
+	window.title = @"FastGaussianBlur";
 
 	[window makeKeyAndOrderFront:nil];
 	[NSApp activate];
