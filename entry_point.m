@@ -5,6 +5,7 @@
 
 #include "renderer.m"
 #include "metal_view_controller.m"
+#include "benchmarks_view_controller.m"
 #include "main_view_controller.m"
 #include "app_delegate.m"
 
