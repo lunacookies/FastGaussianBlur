@@ -27,11 +27,12 @@ CreateMenu(void)
 }
 
 @interface AppDelegate : NSObject <NSApplicationDelegate>
+{
+	NSWindow *window;
+}
 @end
 
 @implementation AppDelegate
-
-NSWindow *window;
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification
 {
