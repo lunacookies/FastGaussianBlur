@@ -22,15 +22,12 @@
 
 @implementation Renderer
 
-- (instancetype)initWithDevice:(id<MTLDevice>)_device
-                   pixelFormat:(MTLPixelFormat)_pixelFormat
-                    blurRadius:(float)_blurRadius
+- (instancetype)initWithDevice:(id<MTLDevice>)_device pixelFormat:(MTLPixelFormat)_pixelFormat
 {
 	self = [super init];
 
 	device = _device;
 	pixelFormat = _pixelFormat;
-	blurRadius = _blurRadius;
 	commandQueue = [device newCommandQueue];
 
 	NSBundle *bundle = [NSBundle mainBundle];
@@ -294,6 +291,11 @@
 
 	offscreenTexture = [device newTextureWithDescriptor:descriptor];
 	offscreenTexture.label = @"Offscreen Texture";
+}
+
+- (void)setBlurRadius:(float)_blurRadius
+{
+	blurRadius = _blurRadius;
 }
 
 @end

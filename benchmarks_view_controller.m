@@ -184,10 +184,10 @@ RunBenchmark(NSProgress *progress, NSTableViewDiffableDataSource *dataSource)
 	        blurRadius += blurRadiusStep)
 	{
 		Renderer *renderer = [[Renderer alloc] initWithDevice:device
-		                                          pixelFormat:MTLPixelFormatBGRA8Unorm
-		                                           blurRadius:blurRadius];
+		                                          pixelFormat:MTLPixelFormatBGRA8Unorm];
 
 		[renderer setSize:size scaleFactor:scaleFactor];
+		[renderer setBlurRadius:blurRadius];
 
 		double averageDuration = 0;
 
