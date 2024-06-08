@@ -27,7 +27,9 @@
 	metalLayer.device = device;
 	metalLayer.framebufferOnly = NO;
 
-	renderer = [[Renderer alloc] initWithDevice:device pixelFormat:metalLayer.pixelFormat];
+	renderer = [[Renderer alloc] initWithDevice:device
+	                                pixelFormat:metalLayer.pixelFormat
+	                                 blurRadius:100];
 
 	displayLink = [self.view displayLinkWithTarget:self selector:@selector(render)];
 	[displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];

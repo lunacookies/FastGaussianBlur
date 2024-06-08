@@ -15,17 +15,22 @@
 	simd_float2 *boxPositions;
 	simd_float2 *boxSizes;
 	simd_float4 *boxColors;
+
+	float blurRadius;
 }
 @end
 
 @implementation Renderer
 
-- (instancetype)initWithDevice:(id<MTLDevice>)_device pixelFormat:(MTLPixelFormat)_pixelFormat
+- (instancetype)initWithDevice:(id<MTLDevice>)_device
+                   pixelFormat:(MTLPixelFormat)_pixelFormat
+                    blurRadius:(float)_blurRadius
 {
 	self = [super init];
 
 	device = _device;
 	pixelFormat = _pixelFormat;
+	blurRadius = _blurRadius;
 	commandQueue = [device newCommandQueue];
 
 	NSBundle *bundle = [NSBundle mainBundle];
@@ -127,11 +132,7 @@
 		        {1, 1, 1, 0.25},
 		        {1, 1, 1, 0.25},
 		};
-		float blurRadii[] = {
-		        100,
-		        25,
-		        200,
-		};
+		float blurRadii[] = {blurRadius, blurRadius, blurRadius};
 
 		[encoder endEncoding];
 		encoder = [self blurWithCommandBuffer:commandBuffer
@@ -160,7 +161,7 @@
 		        {1, 1, 1, 0.25},
 		};
 		float blurRadii[] = {
-		        50,
+		        blurRadius,
 		};
 
 		[encoder endEncoding];
