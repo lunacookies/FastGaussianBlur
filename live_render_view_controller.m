@@ -1,4 +1,4 @@
-@interface MetalViewController : NSViewController
+@interface LiveRenderViewController : NSViewController
 {
 	CAMetalLayer *metalLayer;
 	CADisplayLink *displayLink;
@@ -6,7 +6,7 @@
 }
 @end
 
-@implementation MetalViewController
+@implementation LiveRenderViewController
 
 - (instancetype)init
 {

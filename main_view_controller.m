@@ -9,7 +9,7 @@
 
 	self.tabStyle = NSTabViewControllerTabStyleUnspecified;
 
-	[self addChildViewController:[[MetalViewController alloc] init]];
+	[self addChildViewController:[[LiveRenderViewController alloc] init]];
 	[self addChildViewController:[[BenchmarksViewController alloc] init]];
 
 	for (NSViewController *childViewController in self.childViewControllers)
