@@ -1,9 +1,7 @@
 @interface LiveRenderView : NSView
-{
-	CAMetalLayer *metalLayer;
-	CADisplayLink *displayLink;
-	Renderer *renderer;
-}
+@property CAMetalLayer *metalLayer;
+@property CADisplayLink *displayLink;
+@property Renderer *renderer;
 @end
 
 @implementation LiveRenderView
@@ -16,22 +14,23 @@
 
 	self.wantsLayer = YES;
 	self.layer = [CAMetalLayer layer];
-	metalLayer = (CAMetalLayer *)self.layer;
-	metalLayer.device = device;
-	metalLayer.framebufferOnly = NO;
+	self.metalLayer = (CAMetalLayer *)self.layer;
+	self.metalLayer.device = device;
+	self.metalLayer.framebufferOnly = NO;
 
-	renderer = [[Renderer alloc] initWithDevice:device pixelFormat:metalLayer.pixelFormat];
+	self.renderer = [[Renderer alloc] initWithDevice:device
+	                                     pixelFormat:self.metalLayer.pixelFormat];
 
-	displayLink = [self displayLinkWithTarget:self selector:@selector(render)];
-	[displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+	self.displayLink = [self displayLinkWithTarget:self selector:@selector(render)];
+	[self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 
 	return self;
 }
 
 - (void)render
 {
-	id<CAMetalDrawable> drawable = [metalLayer nextDrawable];
-	id<MTLCommandBuffer> commandBuffer = [renderer render:drawable.texture];
+	id<CAMetalDrawable> drawable = [self.metalLayer nextDrawable];
+	id<MTLCommandBuffer> commandBuffer = [self.renderer render:drawable.texture];
 	[commandBuffer presentDrawable:drawable];
 	[commandBuffer commit];
 }
@@ -60,27 +59,21 @@
 		return;
 	}
 
-	metalLayer.contentsScale = scaleFactor;
-	metalLayer.drawableSize = size;
+	self.metalLayer.contentsScale = scaleFactor;
+	self.metalLayer.drawableSize = size;
 
-	[renderer setSize:(simd_float2){(float)self.frame.size.width, (float)self.frame.size.height}
-	        scaleFactor:(float)scaleFactor];
-}
-
-- (void)setBlurRadius:(float)blurRadius
-{
-	[renderer setBlurRadius:blurRadius];
+	[self.renderer setSize:(simd_float2){
+	                               (float)self.frame.size.width, (float)self.frame.size.height}
+	           scaleFactor:(float)scaleFactor];
 }
 
 @end
 
 @interface LiveRenderViewController : NSViewController
-{
-	LiveRenderView *liveRenderView;
-	NSStackView *inspector;
-	NSTextField *blurRadiusLabel;
-	NSSlider *blurRadiusSlider;
-}
+@property LiveRenderView *liveRenderView;
+@property NSStackView *inspector;
+@property NSTextField *blurRadiusLabel;
+@property NSSlider *blurRadiusSlider;
 @end
 
 @implementation LiveRenderViewController
@@ -96,58 +89,60 @@
 {
 	[super viewDidLoad];
 
-	liveRenderView = [[LiveRenderView alloc] init];
+	self.liveRenderView = [[LiveRenderView alloc] init];
 
-	inspector = [[NSStackView alloc] init];
-	inspector.orientation = NSUserInterfaceLayoutOrientationVertical;
-	inspector.alignment = NSLayoutAttributeLeading;
+	self.inspector = [[NSStackView alloc] init];
+	self.inspector.orientation = NSUserInterfaceLayoutOrientationVertical;
+	self.inspector.alignment = NSLayoutAttributeLeading;
 
 	NSTextField *titleLabel = [NSTextField labelWithString:@"Inspector"];
 	titleLabel.font = [NSFont boldSystemFontOfSize:16];
-	[inspector addArrangedSubview:titleLabel];
+	[self.inspector addArrangedSubview:titleLabel];
 
-	blurRadiusLabel = [NSTextField labelWithString:@""];
-	[inspector addArrangedSubview:blurRadiusLabel];
+	self.blurRadiusLabel = [NSTextField labelWithString:@""];
+	[self.inspector addArrangedSubview:self.blurRadiusLabel];
 
-	blurRadiusSlider = [NSSlider sliderWithValue:50
-	                                    minValue:FLT_EPSILON
-	                                    maxValue:150
-	                                      target:self
-	                                      action:@selector(updateConfiguration:)];
-	[inspector addArrangedSubview:blurRadiusSlider];
+	self.blurRadiusSlider = [NSSlider sliderWithValue:50
+	                                         minValue:FLT_EPSILON
+	                                         maxValue:150
+	                                           target:self
+	                                           action:@selector(updateConfiguration:)];
+	[self.inspector addArrangedSubview:self.blurRadiusSlider];
 
 	[self updateConfiguration:nil];
 
-	[self.view addSubview:liveRenderView];
-	[self.view addSubview:inspector];
-	liveRenderView.translatesAutoresizingMaskIntoConstraints = NO;
-	inspector.translatesAutoresizingMaskIntoConstraints = NO;
+	[self.view addSubview:self.liveRenderView];
+	[self.view addSubview:self.inspector];
+	self.liveRenderView.translatesAutoresizingMaskIntoConstraints = NO;
+	self.inspector.translatesAutoresizingMaskIntoConstraints = NO;
 
 	CGFloat padding = 24;
 	[NSLayoutConstraint activateConstraints:@[
-		[liveRenderView.topAnchor constraintEqualToAnchor:self.view.topAnchor],
-		[liveRenderView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
-		[liveRenderView.trailingAnchor constraintEqualToAnchor:inspector.leadingAnchor
+		[self.liveRenderView.topAnchor constraintEqualToAnchor:self.view.topAnchor],
+		[self.liveRenderView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+		[self.liveRenderView.trailingAnchor
+		        constraintEqualToAnchor:self.inspector.leadingAnchor
+		                       constant:-padding],
+		[self.liveRenderView.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+
+		[self.inspector.topAnchor constraintEqualToAnchor:self.view.topAnchor
+		                                         constant:padding],
+		[self.inspector.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor
 		                                              constant:-padding],
-		[liveRenderView.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+		[self.inspector.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor
+		                                            constant:-padding],
 
-		[inspector.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:padding],
-		[inspector.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor
-		                                         constant:-padding],
-		[inspector.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor
-		                                       constant:-padding],
-
-		[titleLabel.bottomAnchor constraintEqualToAnchor:blurRadiusLabel.topAnchor
+		[titleLabel.bottomAnchor constraintEqualToAnchor:self.blurRadiusLabel.topAnchor
 		                                        constant:-24],
-		[blurRadiusSlider.widthAnchor constraintGreaterThanOrEqualToConstant:150],
+		[self.blurRadiusSlider.widthAnchor constraintGreaterThanOrEqualToConstant:150],
 	]];
 }
 
 - (void)updateConfiguration:(id)sender
 {
-	blurRadiusLabel.stringValue =
-	        [NSString stringWithFormat:@"Blur Radius: %.02f", blurRadiusSlider.floatValue];
-	[liveRenderView setBlurRadius:blurRadiusSlider.floatValue];
+	self.blurRadiusLabel.stringValue =
+	        [NSString stringWithFormat:@"Blur Radius: %.02f", self.blurRadiusSlider.floatValue];
+	self.liveRenderView.renderer.blurRadius = self.blurRadiusSlider.floatValue;
 }
 
 @end

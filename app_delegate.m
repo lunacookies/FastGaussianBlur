@@ -27,9 +27,7 @@ CreateMenu(void)
 }
 
 @interface AppDelegate : NSObject <NSApplicationDelegate>
-{
-	NSWindow *window;
-}
+@property NSWindow *window;
 @end
 
 @implementation AppDelegate
@@ -42,15 +40,15 @@ CreateMenu(void)
 
 	NSWindowStyleMask style = NSWindowStyleMaskTitled | NSWindowStyleMaskResizable |
 	                          NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable;
-	window = [[NSWindow alloc] initWithContentRect:rect
-	                                     styleMask:style
-	                                       backing:NSBackingStoreBuffered
-	                                         defer:NO];
+	self.window = [[NSWindow alloc] initWithContentRect:rect
+	                                          styleMask:style
+	                                            backing:NSBackingStoreBuffered
+	                                              defer:NO];
 
-	window.contentViewController = [[MainViewController alloc] init];
-	window.title = @"FastGaussianBlur";
+	self.window.contentViewController = [[MainViewController alloc] init];
+	self.window.title = @"FastGaussianBlur";
 
-	[window makeKeyAndOrderFront:nil];
+	[self.window makeKeyAndOrderFront:nil];
 	[NSApp activate];
 }
 

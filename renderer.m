@@ -1,43 +1,43 @@
 @interface Renderer : NSObject
-{
-	id<MTLDevice> device;
-	id<MTLCommandQueue> commandQueue;
 
-	simd_float2 size;
-	float scaleFactor;
-	MTLPixelFormat pixelFormat;
-	id<MTLTexture> offscreenTexture;
+@property id<MTLDevice> device;
+@property id<MTLCommandQueue> commandQueue;
 
-	id<MTLRenderPipelineState> pipelineState;
-	id<MTLRenderPipelineState> pipelineStateBlur;
+@property simd_float2 size;
+@property float scaleFactor;
+@property MTLPixelFormat pixelFormat;
+@property id<MTLTexture> offscreenTexture;
 
-	uint64_t boxCount;
-	simd_float2 *boxPositions;
-	simd_float2 *boxSizes;
-	simd_float4 *boxColors;
+@property id<MTLRenderPipelineState> pipelineState;
+@property id<MTLRenderPipelineState> pipelineStateBlur;
 
-	float blurRadius;
-}
+@property uint64_t boxCount;
+@property simd_float2 *boxPositions;
+@property simd_float2 *boxSizes;
+@property simd_float4 *boxColors;
+
+@property float blurRadius;
+
 @end
 
 @implementation Renderer
 
-- (instancetype)initWithDevice:(id<MTLDevice>)_device pixelFormat:(MTLPixelFormat)_pixelFormat
+- (instancetype)initWithDevice:(id<MTLDevice>)device pixelFormat:(MTLPixelFormat)pixelFormat
 {
 	self = [super init];
 
-	device = _device;
-	pixelFormat = _pixelFormat;
-	commandQueue = [device newCommandQueue];
+	self.device = device;
+	self.pixelFormat = pixelFormat;
+	self.commandQueue = [self.device newCommandQueue];
 
 	NSBundle *bundle = [NSBundle mainBundle];
 	NSURL *libraryURL = [bundle URLForResource:@"shaders" withExtension:@"metallib"];
-	id<MTLLibrary> library = [device newLibraryWithURL:libraryURL error:nil];
+	id<MTLLibrary> library = [self.device newLibraryWithURL:libraryURL error:nil];
 
 	{
 		MTLRenderPipelineDescriptor *descriptor =
 		        [[MTLRenderPipelineDescriptor alloc] init];
-		descriptor.colorAttachments[0].pixelFormat = pixelFormat;
+		descriptor.colorAttachments[0].pixelFormat = self.pixelFormat;
 		descriptor.colorAttachments[0].blendingEnabled = YES;
 		descriptor.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorOne;
 		descriptor.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
@@ -47,29 +47,30 @@
 		        MTLBlendFactorOneMinusSourceAlpha;
 		descriptor.vertexFunction = [library newFunctionWithName:@"VertexFunction"];
 		descriptor.fragmentFunction = [library newFunctionWithName:@"FragmentFunction"];
-		pipelineState = [device newRenderPipelineStateWithDescriptor:descriptor error:nil];
+		self.pipelineState = [self.device newRenderPipelineStateWithDescriptor:descriptor
+		                                                                 error:nil];
 	}
 
 	{
 		MTLRenderPipelineDescriptor *descriptor =
 		        [[MTLRenderPipelineDescriptor alloc] init];
-		descriptor.colorAttachments[0].pixelFormat = pixelFormat;
+		descriptor.colorAttachments[0].pixelFormat = self.pixelFormat;
 		descriptor.vertexFunction = [library newFunctionWithName:@"BlurVertexFunction"];
 		descriptor.fragmentFunction = [library newFunctionWithName:@"BlurFragmentFunction"];
-		pipelineStateBlur = [device newRenderPipelineStateWithDescriptor:descriptor
-		                                                           error:nil];
+		self.pipelineStateBlur =
+		        [self.device newRenderPipelineStateWithDescriptor:descriptor error:nil];
 	}
 
 	uint64_t rows = 5;
 	uint64_t columns = 10;
-	boxCount = rows * columns;
+	self.boxCount = rows * columns;
 
 	simd_float2 boxSize = {40, 40};
 	simd_float2 padding = {30, 30};
 
-	boxPositions = calloc(boxCount, sizeof(simd_float2));
-	boxSizes = calloc(boxCount, sizeof(simd_float2));
-	boxColors = calloc(boxCount, sizeof(simd_float4));
+	self.boxPositions = calloc(self.boxCount, sizeof(simd_float2));
+	self.boxSizes = calloc(self.boxCount, sizeof(simd_float2));
+	self.boxColors = calloc(self.boxCount, sizeof(simd_float4));
 
 	for (uint64_t y = 0; y < rows; y++)
 	{
@@ -77,16 +78,16 @@
 		{
 			uint64_t i = y * columns + x;
 
-			boxPositions[i].x = x + 1;
-			boxPositions[i].y = y + 1;
-			boxPositions[i] *= boxSize + padding;
+			self.boxPositions[i].x = x + 1;
+			self.boxPositions[i].y = y + 1;
+			self.boxPositions[i] *= boxSize + padding;
 
-			boxSizes[i] = boxSize;
+			self.boxSizes[i] = boxSize;
 
-			boxColors[i].r = (float)arc4random_uniform(255) / 255;
-			boxColors[i].g = (float)arc4random_uniform(255) / 255;
-			boxColors[i].b = (float)arc4random_uniform(255) / 255;
-			boxColors[i].a = 1;
+			self.boxColors[i].r = (float)arc4random_uniform(255) / 255;
+			self.boxColors[i].g = (float)arc4random_uniform(255) / 255;
+			self.boxColors[i].b = (float)arc4random_uniform(255) / 255;
+			self.boxColors[i].a = 1;
 		}
 	}
 
@@ -95,7 +96,7 @@
 
 - (id<MTLCommandBuffer>)render:(id<MTLTexture>)target
 {
-	id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+	id<MTLCommandBuffer> commandBuffer = [self.commandQueue commandBuffer];
 
 	MTLRenderPassDescriptor *descriptor = [MTLRenderPassDescriptor renderPassDescriptor];
 	descriptor.colorAttachments[0].texture = target;
@@ -108,10 +109,10 @@
 
 	[self drawBoxesWithEncoder:encoder
 	                    target:target
-	                 positions:boxPositions
-	                     sizes:boxSizes
-	                    colors:boxColors
-	                     count:boxCount];
+	                 positions:self.boxPositions
+	                     sizes:self.boxSizes
+	                    colors:self.boxColors
+	                     count:self.boxCount];
 
 	{
 		simd_float2 positions[] = {
@@ -129,7 +130,7 @@
 		        {1, 1, 1, 0.25},
 		        {1, 1, 1, 0.25},
 		};
-		float blurRadii[] = {blurRadius, blurRadius, blurRadius};
+		float blurRadii[] = {self.blurRadius, self.blurRadius, self.blurRadius};
 
 		[encoder endEncoding];
 		encoder = [self blurWithCommandBuffer:commandBuffer
@@ -158,7 +159,7 @@
 		        {1, 1, 1, 0.25},
 		};
 		float blurRadii[] = {
-		        blurRadius,
+		        self.blurRadius,
 		};
 
 		[encoder endEncoding];
@@ -189,12 +190,12 @@
                       colors:(simd_float4 *)colors
                        count:(uint64_t)count
 {
-	simd_float2 resolution = size * scaleFactor;
+	simd_float2 resolution = self.size * self.scaleFactor;
 
-	[encoder setRenderPipelineState:pipelineState];
+	[encoder setRenderPipelineState:self.pipelineState];
 
 	[encoder setVertexBytes:&resolution length:sizeof(resolution) atIndex:0];
-	[encoder setVertexBytes:&scaleFactor length:sizeof(scaleFactor) atIndex:1];
+	[encoder setVertexBytes:&_scaleFactor length:sizeof(_scaleFactor) atIndex:1];
 	[encoder setVertexBytes:positions length:sizeof(simd_float2) * count atIndex:2];
 	[encoder setVertexBytes:sizes length:sizeof(simd_float2) * count atIndex:3];
 	[encoder setVertexBytes:colors length:sizeof(simd_float4) * count atIndex:4];
@@ -216,11 +217,11 @@
 		MTLBlitPassDescriptor *descriptor = [[MTLBlitPassDescriptor alloc] init];
 		id<MTLBlitCommandEncoder> encoder =
 		        [commandBuffer blitCommandEncoderWithDescriptor:descriptor];
-		[encoder copyFromTexture:target toTexture:offscreenTexture];
+		[encoder copyFromTexture:target toTexture:self.offscreenTexture];
 		[encoder endEncoding];
 	}
 
-	simd_float2 resolution = size * scaleFactor;
+	simd_float2 resolution = self.size * self.scaleFactor;
 
 	id<MTLRenderCommandEncoder> encoder = nil;
 
@@ -235,7 +236,7 @@
 		}
 		else
 		{
-			descriptor.colorAttachments[0].texture = offscreenTexture;
+			descriptor.colorAttachments[0].texture = self.offscreenTexture;
 		}
 
 		descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
@@ -243,20 +244,20 @@
 
 		encoder = [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
 
-		[encoder setRenderPipelineState:pipelineStateBlur];
+		[encoder setRenderPipelineState:self.pipelineStateBlur];
 
 		[encoder setVertexBytes:&resolution length:sizeof(resolution) atIndex:0];
-		[encoder setVertexBytes:&scaleFactor length:sizeof(scaleFactor) atIndex:1];
+		[encoder setVertexBytes:&_scaleFactor length:sizeof(_scaleFactor) atIndex:1];
 		[encoder setVertexBytes:positions length:sizeof(simd_float2) * count atIndex:2];
 		[encoder setVertexBytes:sizes length:sizeof(simd_float2) * count atIndex:3];
 		[encoder setFragmentBytes:&resolution length:sizeof(resolution) atIndex:0];
-		[encoder setFragmentBytes:&scaleFactor length:sizeof(scaleFactor) atIndex:1];
+		[encoder setFragmentBytes:&_scaleFactor length:sizeof(_scaleFactor) atIndex:1];
 		[encoder setFragmentBytes:&horizontal length:sizeof(horizontal) atIndex:2];
 		[encoder setFragmentBytes:blurRadii length:sizeof(float) * count atIndex:3];
 
 		if (horizontal)
 		{
-			[encoder setFragmentTexture:offscreenTexture atIndex:0];
+			[encoder setFragmentTexture:self.offscreenTexture atIndex:0];
 		}
 		else
 		{
@@ -277,25 +278,20 @@
 	return encoder;
 }
 
-- (void)setSize:(simd_float2)_size scaleFactor:(float)_scaleFactor
+- (void)setSize:(simd_float2)size scaleFactor:(float)scaleFactor
 {
-	size = _size;
-	scaleFactor = _scaleFactor;
+	self.size = size;
+	self.scaleFactor = scaleFactor;
 
 	MTLTextureDescriptor *descriptor = [[MTLTextureDescriptor alloc] init];
-	descriptor.width = (NSUInteger)(size.x * scaleFactor);
-	descriptor.height = (NSUInteger)(size.y * scaleFactor);
-	descriptor.pixelFormat = pixelFormat;
+	descriptor.width = (NSUInteger)(self.size.x * self.scaleFactor);
+	descriptor.height = (NSUInteger)(self.size.y * self.scaleFactor);
+	descriptor.self.pixelFormat = self.pixelFormat;
 	descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
 	descriptor.storageMode = MTLStorageModePrivate;
 
-	offscreenTexture = [device newTextureWithDescriptor:descriptor];
-	offscreenTexture.label = @"Offscreen Texture";
-}
-
-- (void)setBlurRadius:(float)_blurRadius
-{
-	blurRadius = _blurRadius;
+	self.offscreenTexture = [self.device newTextureWithDescriptor:descriptor];
+	self.offscreenTexture.label = @"Offscreen Texture";
 }
 
 @end

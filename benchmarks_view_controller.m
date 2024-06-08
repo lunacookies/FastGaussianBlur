@@ -1,10 +1,8 @@
 @interface BenchmarksViewController : NSViewController
-{
-	NSStackView *stackView;
-	NSProgressIndicator *progressIndicator;
-	NSTableView *resultsTableView;
-	NSTableViewDiffableDataSource *dataSource;
-}
+@property NSStackView *stackView;
+@property NSProgressIndicator *progressIndicator;
+@property NSTableView *resultsTableView;
+@property NSTableViewDiffableDataSource *dataSource;
 @end
 
 @interface CellId : NSObject
@@ -31,38 +29,38 @@ NSString *DurationColumnIdentifier = @"Duration";
 
 - (void)viewDidLoad
 {
-	stackView = [[NSStackView alloc] init];
-	stackView.orientation = NSUserInterfaceLayoutOrientationVertical;
-	stackView.alignment = NSLayoutAttributeLeading;
+	self.stackView = [[NSStackView alloc] init];
+	self.stackView.orientation = NSUserInterfaceLayoutOrientationVertical;
+	self.stackView.alignment = NSLayoutAttributeLeading;
 
-	[self.view addSubview:stackView];
-	stackView.translatesAutoresizingMaskIntoConstraints = NO;
+	[self.view addSubview:self.stackView];
+	self.stackView.translatesAutoresizingMaskIntoConstraints = NO;
 	[NSLayoutConstraint activateConstraints:@[
-		[stackView.topAnchor
+		[self.stackView.topAnchor
 		        constraintEqualToAnchor:self.view.layoutMarginsGuide.topAnchor],
-		[stackView.leadingAnchor
+		[self.stackView.leadingAnchor
 		        constraintEqualToAnchor:self.view.layoutMarginsGuide.leadingAnchor],
-		[stackView.trailingAnchor
+		[self.stackView.trailingAnchor
 		        constraintEqualToAnchor:self.view.layoutMarginsGuide.trailingAnchor],
-		[stackView.bottomAnchor
+		[self.stackView.bottomAnchor
 		        constraintEqualToAnchor:self.view.layoutMarginsGuide.bottomAnchor],
 	]];
 
 	NSButton *runBenchmarkButton = [NSButton buttonWithTitle:@"Run Benchmark"
 	                                                  target:self
 	                                                  action:@selector(didPressRunBenchmarks:)];
-	[stackView addArrangedSubview:runBenchmarkButton];
+	[self.stackView addArrangedSubview:runBenchmarkButton];
 
-	progressIndicator = [[NSProgressIndicator alloc] init];
-	[stackView addArrangedSubview:progressIndicator];
+	self.progressIndicator = [[NSProgressIndicator alloc] init];
+	[self.stackView addArrangedSubview:self.progressIndicator];
 
 	[self configureResultsTable];
 }
 
 - (void)configureResultsTable
 {
-	resultsTableView = [[NSTableView alloc] init];
-	resultsTableView.allowsColumnReordering = NO;
+	self.resultsTableView = [[NSTableView alloc] init];
+	self.resultsTableView.allowsColumnReordering = NO;
 
 	NSTableColumn *runnerNameColumn =
 	        [[NSTableColumn alloc] initWithIdentifier:RunnerNameColumnIdentifier];
@@ -83,16 +81,16 @@ NSString *DurationColumnIdentifier = @"Duration";
 	blurRadiusColumn.resizingMask = 0;
 	durationColumn.resizingMask = 0;
 
-	[resultsTableView addTableColumn:runnerNameColumn];
-	[resultsTableView addTableColumn:blurRadiusColumn];
-	[resultsTableView addTableColumn:durationColumn];
+	[self.resultsTableView addTableColumn:runnerNameColumn];
+	[self.resultsTableView addTableColumn:blurRadiusColumn];
+	[self.resultsTableView addTableColumn:durationColumn];
 
 	[self configureResultsTableViewDataSource];
 
 	NSScrollView *scrollView = [[NSScrollView alloc] init];
-	scrollView.documentView = resultsTableView;
+	scrollView.documentView = self.resultsTableView;
 	scrollView.hasVerticalScroller = YES;
-	[stackView addArrangedSubview:scrollView];
+	[self.stackView addArrangedSubview:scrollView];
 }
 
 - (void)configureResultsTableViewDataSource
@@ -100,7 +98,8 @@ NSString *DurationColumnIdentifier = @"Duration";
 	NSTableViewDiffableDataSourceCellProvider provider = ^(
 	        NSTableView *_tableView, NSTableColumn *column, NSInteger row, id itemId) {
 	  NSString *cellIdentifier = @"Cell";
-	  NSTextField *view = [resultsTableView makeViewWithIdentifier:cellIdentifier owner:self];
+	  NSTextField *view = [self.resultsTableView makeViewWithIdentifier:cellIdentifier
+		                                                      owner:self];
 	  if (view == nil)
 	  {
 		  view = [NSTextField labelWithString:@""];
@@ -129,19 +128,20 @@ NSString *DurationColumnIdentifier = @"Duration";
 	  return view;
 	};
 
-	dataSource = [[NSTableViewDiffableDataSource alloc] initWithTableView:resultsTableView
-	                                                         cellProvider:provider];
+	self.dataSource =
+	        [[NSTableViewDiffableDataSource alloc] initWithTableView:self.resultsTableView
+	                                                    cellProvider:provider];
 }
 
 - (void)didPressRunBenchmarks:(NSButton *)sender
 {
 	sender.enabled = NO;
 	NSProgress *progress = [[NSProgress alloc] init];
-	progressIndicator.observedProgress = progress;
+	self.progressIndicator.observedProgress = progress;
 
 	dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0);
 	dispatch_async(queue, ^{
-	  RunBenchmark(progress, dataSource);
+	  RunBenchmark(progress, self.dataSource);
 	  dispatch_sync(dispatch_get_main_queue(), ^{
 	    sender.enabled = YES;
 	  });
@@ -187,7 +187,7 @@ RunBenchmark(NSProgress *progress, NSTableViewDiffableDataSource *dataSource)
 		                                          pixelFormat:MTLPixelFormatBGRA8Unorm];
 
 		[renderer setSize:size scaleFactor:scaleFactor];
-		[renderer setBlurRadius:blurRadius];
+		renderer.blurRadius = blurRadius;
 
 		double averageDuration = 0;
 
