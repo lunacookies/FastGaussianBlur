@@ -27,6 +27,31 @@ typedef enum
 	BlurImplementation__Count,
 } BlurImplementation;
 
+typedef struct Rng Rng;
+struct Rng
+{
+	uint32_t state;
+};
+
+static Rng
+RngCreate(void)
+{
+	Rng result = {0};
+	result.state = 4; // chosen by fair dice roll, guaranteed to be random.
+	return result;
+}
+
+static float
+RngNextFloat(Rng *rng)
+{
+	uint32_t x = rng->state;
+	x ^= x << 13;
+	x ^= x >> 17;
+	x ^= x << 5;
+	rng->state = x;
+	return (float)x / (float)UINT32_MAX;
+}
+
 @implementation Renderer
 
 - (instancetype)initWithDevice:(id<MTLDevice>)device
@@ -99,6 +124,8 @@ typedef enum
 	self.boxSizes = calloc(self.boxCount, sizeof(simd_float2));
 	self.boxColors = calloc(self.boxCount, sizeof(simd_float4));
 
+	Rng rng = RngCreate();
+
 	for (uint64_t y = 0; y < rows; y++)
 	{
 		for (uint64_t x = 0; x < columns; x++)
@@ -111,9 +138,9 @@ typedef enum
 
 			self.boxSizes[i] = boxSize;
 
-			self.boxColors[i].r = (float)arc4random_uniform(255) / 255;
-			self.boxColors[i].g = (float)arc4random_uniform(255) / 255;
-			self.boxColors[i].b = (float)arc4random_uniform(255) / 255;
+			self.boxColors[i].r = RngNextFloat(&rng);
+			self.boxColors[i].g = RngNextFloat(&rng);
+			self.boxColors[i].b = RngNextFloat(&rng);
 			self.boxColors[i].a = 1;
 		}
 	}
