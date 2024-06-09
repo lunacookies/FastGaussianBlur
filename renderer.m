@@ -22,7 +22,9 @@
 
 typedef enum
 {
-	BlurImplementation_SampleEveryPixel
+	BlurImplementation_SampleEveryPixel,
+	BlurImplementation_SamplePixelQuads,
+	BlurImplementation__Count,
 } BlurImplementation;
 
 @implementation Renderer
@@ -63,12 +65,23 @@ typedef enum
 		        [[MTLRenderPipelineDescriptor alloc] init];
 		descriptor.colorAttachments[0].pixelFormat = self.pixelFormat;
 
-		if (blurImplementation == BlurImplementation_SampleEveryPixel)
+		switch (blurImplementation)
 		{
-			descriptor.vertexFunction =
-			        [library newFunctionWithName:@"BlurVertexFunction"];
-			descriptor.fragmentFunction =
-			        [library newFunctionWithName:@"BlurFragmentFunction"];
+			case BlurImplementation_SampleEveryPixel:
+				descriptor.vertexFunction =
+				        [library newFunctionWithName:@"BlurVertexFunction"];
+				descriptor.fragmentFunction =
+				        [library newFunctionWithName:
+				                         @"BlurFragmentFunctionSampleEveryPixel"];
+				break;
+			case BlurImplementation_SamplePixelQuads:
+				descriptor.vertexFunction =
+				        [library newFunctionWithName:@"BlurVertexFunction"];
+				descriptor.fragmentFunction =
+				        [library newFunctionWithName:
+				                         @"BlurFragmentFunctionSamplePixelQuads"];
+				break;
+			case BlurImplementation__Count: break;
 		}
 
 		self.pipelineStateBlur =

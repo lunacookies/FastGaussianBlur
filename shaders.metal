@@ -73,9 +73,9 @@ BlurVertexFunction(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]
 
 float4
 Blur(BlurRasterizerData input, float2 resolution, float blur_radius, uint horizontal,
-        metal::texture2d<float> behind)
+        metal::texture2d<float> behind, float sample_offset_step, float sample_offset_nudge)
 {
-	metal::sampler sampler(metal::address::mirrored_repeat);
+	metal::sampler sampler(metal::filter::linear, metal::address::mirrored_repeat);
 
 	float sigma = blur_radius * 0.2;
 	short kernel_radius = (short)blur_radius;
@@ -110,9 +110,10 @@ Blur(BlurRasterizerData input, float2 resolution, float blur_radius, uint horizo
 	}
 
 	for (float sample_offset = sample_offset_start; sample_offset < sample_offset_end;
-	        sample_offset++)
+	        sample_offset += sample_offset_step)
 	{
-		float2 sample_position = input.position.xy + sample_offset * axis;
+		float2 sample_position =
+		        input.position.xy + (sample_offset + sample_offset_nudge) * axis;
 		float4 sample = behind.sample(sampler, sample_position / resolution);
 		float weight =
 		        metal::exp(-(float)(sample_offset * sample_offset) / (2 * sigma * sigma));
@@ -127,10 +128,19 @@ Blur(BlurRasterizerData input, float2 resolution, float blur_radius, uint horizo
 }
 
 fragment float4
-BlurFragmentFunction(BlurRasterizerData input [[stage_in]], constant float2 &resolution,
-        constant float &scale_factor, constant uint &horizontal, const device float *blur_radii,
-        metal::texture2d<float> behind)
+BlurFragmentFunctionSampleEveryPixel(BlurRasterizerData input [[stage_in]],
+        constant float2 &resolution, constant float &scale_factor, constant uint &horizontal,
+        const device float *blur_radii, metal::texture2d<float> behind)
 {
 	float blur_radius = blur_radii[input.instance_id] * scale_factor;
-	return Blur(input, resolution, blur_radius, horizontal, behind);
+	return Blur(input, resolution, blur_radius, horizontal, behind, 1, 0);
+}
+
+fragment float4
+BlurFragmentFunctionSamplePixelQuads(BlurRasterizerData input [[stage_in]],
+        constant float2 &resolution, constant float &scale_factor, constant uint &horizontal,
+        const device float *blur_radii, metal::texture2d<float> behind)
+{
+	float blur_radius = blur_radii[input.instance_id] * scale_factor;
+	return Blur(input, resolution, blur_radius, horizontal, behind, 2, 0.5);
 }

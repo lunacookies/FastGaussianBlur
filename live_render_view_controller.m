@@ -92,6 +92,7 @@
 @property LiveRenderView *liveRenderView;
 @property NSStackView *inspector;
 @property NSButton *sampleEveryPixelRadioButton;
+@property NSButton *samplePixelQuadsRadioButton;
 @property NSTextField *blurRadiusLabel;
 @property NSSlider *blurRadiusSlider;
 @end
@@ -127,6 +128,12 @@
 	                                target:self
 	                                action:@selector(updateConfiguration:)];
 	[self.inspector addArrangedSubview:self.sampleEveryPixelRadioButton];
+
+	self.samplePixelQuadsRadioButton =
+	        [NSButton radioButtonWithTitle:@"Sample Pixel Quads"
+	                                target:self
+	                                action:@selector(updateConfiguration:)];
+	[self.inspector addArrangedSubview:self.samplePixelQuadsRadioButton];
 
 	self.blurRadiusLabel = [NSTextField labelWithString:@""];
 	[self.inspector addArrangedSubview:self.blurRadiusLabel];
@@ -172,6 +179,10 @@
 	if (sender == self.sampleEveryPixelRadioButton)
 	{
 		self.liveRenderView.blurImplementation = BlurImplementation_SampleEveryPixel;
+	}
+	else if (sender == self.samplePixelQuadsRadioButton)
+	{
+		self.liveRenderView.blurImplementation = BlurImplementation_SamplePixelQuads;
 	}
 
 	self.blurRadiusLabel.stringValue =

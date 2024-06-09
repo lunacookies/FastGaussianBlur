@@ -114,6 +114,10 @@ NSString *DurationColumnIdentifier = @"Duration";
 			  case BlurImplementation_SampleEveryPixel:
 				  view.stringValue = @"Sample Every Pixel";
 				  break;
+			  case BlurImplementation_SamplePixelQuads:
+				  view.stringValue = @"Sample Pixel Quads";
+				  break;
+			  case BlurImplementation__Count: break;
 		  }
 	  }
 	  else if ([column.identifier isEqualToString:BlurRadiusColumnIdentifier])
@@ -175,7 +179,8 @@ RunBenchmark(NSProgress *progress, NSTableViewDiffableDataSource *dataSource)
 
 	uint64_t trialCount = 64;
 	uint64_t blurRadiusCount = 26;
-	progress.totalUnitCount = (int64_t)(trialCount * blurRadiusCount);
+	progress.totalUnitCount =
+	        (int64_t)(trialCount * blurRadiusCount * BlurImplementation__Count);
 
 	NSDiffableDataSourceSnapshot<NSNumber *, CellId *> *snapshot =
 	        [[NSDiffableDataSourceSnapshot alloc] init];
@@ -185,42 +190,46 @@ RunBenchmark(NSProgress *progress, NSTableViewDiffableDataSource *dataSource)
 	float blurRadiusMaximum = 300;
 	float blurRadiusStep = (blurRadiusMaximum - blurRadiusMinimum) / (blurRadiusCount - 1);
 
-	for (float blurRadius = blurRadiusMinimum; blurRadius <= blurRadiusMaximum;
-	        blurRadius += blurRadiusStep)
+	for (BlurImplementation blurImplementation = 0;
+	        blurImplementation < BlurImplementation__Count; blurImplementation++)
 	{
-		BlurImplementation blurImplementation = BlurImplementation_SampleEveryPixel;
-
-		Renderer *renderer = [[Renderer alloc] initWithDevice:device
-		                                          pixelFormat:MTLPixelFormatBGRA8Unorm
-		                                   blurImplementation:blurImplementation];
-
-		[renderer setSize:size scaleFactor:scaleFactor];
-		renderer.blurRadius = blurRadius;
-
-		double averageDuration = 0;
-
-		for (uint64_t i = 0; i < trialCount; i++)
+		for (float blurRadius = blurRadiusMinimum; blurRadius <= blurRadiusMaximum;
+		        blurRadius += blurRadiusStep)
 		{
-			id<MTLCommandBuffer> commandBuffer = [renderer render:target];
-			[commandBuffer commit];
-			[commandBuffer waitUntilCompleted];
-			progress.completedUnitCount++;
+			Renderer *renderer =
+			        [[Renderer alloc] initWithDevice:device
+			                             pixelFormat:MTLPixelFormatBGRA8Unorm
+			                      blurImplementation:blurImplementation];
 
-			double duration = commandBuffer.GPUEndTime - commandBuffer.GPUStartTime;
-			averageDuration += duration;
+			[renderer setSize:size scaleFactor:scaleFactor];
+			renderer.blurRadius = blurRadius;
+
+			double averageDuration = 0;
+
+			for (uint64_t i = 0; i < trialCount; i++)
+			{
+				id<MTLCommandBuffer> commandBuffer = [renderer render:target];
+				[commandBuffer commit];
+				[commandBuffer waitUntilCompleted];
+				progress.completedUnitCount++;
+
+				double duration =
+				        commandBuffer.GPUEndTime - commandBuffer.GPUStartTime;
+				averageDuration += duration;
+			}
+
+			averageDuration /= trialCount;
+
+			CellId *cellId = [[CellId alloc] init];
+			cellId.blurImplementation = blurImplementation;
+			cellId.blurRadius = blurRadius;
+			cellId.averageDuration = averageDuration;
+			[snapshot appendItemsWithIdentifiers:@[ cellId ]];
+
+			dispatch_sync(dispatch_get_main_queue(), ^{
+			  [dataSource applySnapshot:snapshot animatingDifferences:YES];
+			});
 		}
-
-		averageDuration /= trialCount;
-
-		CellId *cellId = [[CellId alloc] init];
-		cellId.blurImplementation = blurImplementation;
-		cellId.blurRadius = blurRadius;
-		cellId.averageDuration = averageDuration;
-		[snapshot appendItemsWithIdentifiers:@[ cellId ]];
-
-		dispatch_sync(dispatch_get_main_queue(), ^{
-		  [dataSource applySnapshot:snapshot animatingDifferences:YES];
-		});
 	}
 }
 
