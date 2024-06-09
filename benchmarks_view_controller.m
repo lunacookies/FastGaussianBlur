@@ -6,7 +6,7 @@
 @end
 
 @interface CellId : NSObject
-@property NSString *benchmarkRunner;
+@property BlurImplementation blurImplementation;
 @property float blurRadius;
 @property double averageDuration;
 @end
@@ -16,7 +16,7 @@
 
 @implementation BenchmarksViewController
 
-NSString *RunnerNameColumnIdentifier = @"RunnerName";
+NSString *BlurImplementationColumnIdentifier = @"BlurImplementation";
 NSString *BlurRadiusColumnIdentifier = @"BlurRadius";
 NSString *DurationColumnIdentifier = @"Duration";
 
@@ -62,26 +62,26 @@ NSString *DurationColumnIdentifier = @"Duration";
 	self.resultsTableView = [[NSTableView alloc] init];
 	self.resultsTableView.allowsColumnReordering = NO;
 
-	NSTableColumn *runnerNameColumn =
-	        [[NSTableColumn alloc] initWithIdentifier:RunnerNameColumnIdentifier];
+	NSTableColumn *blurImplementationColumn =
+	        [[NSTableColumn alloc] initWithIdentifier:BlurImplementationColumnIdentifier];
 	NSTableColumn *blurRadiusColumn =
 	        [[NSTableColumn alloc] initWithIdentifier:BlurRadiusColumnIdentifier];
 	NSTableColumn *durationColumn =
 	        [[NSTableColumn alloc] initWithIdentifier:DurationColumnIdentifier];
 
-	runnerNameColumn.title = @"Benchmark Runner";
+	blurImplementationColumn.title = @"Blur Implementation";
 	blurRadiusColumn.title = @"Blur Radius";
 	durationColumn.title = @"Duration (ms)";
 
-	runnerNameColumn.width = 160;
+	blurImplementationColumn.width = 160;
 	blurRadiusColumn.width = 80;
 	durationColumn.width = 80;
 
-	runnerNameColumn.resizingMask = 0;
+	blurImplementationColumn.resizingMask = 0;
 	blurRadiusColumn.resizingMask = 0;
 	durationColumn.resizingMask = 0;
 
-	[self.resultsTableView addTableColumn:runnerNameColumn];
+	[self.resultsTableView addTableColumn:blurImplementationColumn];
 	[self.resultsTableView addTableColumn:blurRadiusColumn];
 	[self.resultsTableView addTableColumn:durationColumn];
 
@@ -107,9 +107,14 @@ NSString *DurationColumnIdentifier = @"Duration";
 	  }
 
 	  CellId *cellId = itemId;
-	  if ([column.identifier isEqualToString:RunnerNameColumnIdentifier])
+	  if ([column.identifier isEqualToString:BlurImplementationColumnIdentifier])
 	  {
-		  view.stringValue = cellId.benchmarkRunner;
+		  switch (cellId.blurImplementation)
+		  {
+			  case BlurImplementation_SampleEveryPixel:
+				  view.stringValue = @"Sample Every Pixel";
+				  break;
+		  }
 	  }
 	  else if ([column.identifier isEqualToString:BlurRadiusColumnIdentifier])
 	  {
@@ -183,8 +188,11 @@ RunBenchmark(NSProgress *progress, NSTableViewDiffableDataSource *dataSource)
 	for (float blurRadius = blurRadiusMinimum; blurRadius <= blurRadiusMaximum;
 	        blurRadius += blurRadiusStep)
 	{
+		BlurImplementation blurImplementation = BlurImplementation_SampleEveryPixel;
+
 		Renderer *renderer = [[Renderer alloc] initWithDevice:device
-		                                          pixelFormat:MTLPixelFormatBGRA8Unorm];
+		                                          pixelFormat:MTLPixelFormatBGRA8Unorm
+		                                   blurImplementation:blurImplementation];
 
 		[renderer setSize:size scaleFactor:scaleFactor];
 		renderer.blurRadius = blurRadius;
@@ -205,7 +213,7 @@ RunBenchmark(NSProgress *progress, NSTableViewDiffableDataSource *dataSource)
 		averageDuration /= trialCount;
 
 		CellId *cellId = [[CellId alloc] init];
-		cellId.benchmarkRunner = @"Sample Every Pixel";
+		cellId.blurImplementation = blurImplementation;
 		cellId.blurRadius = blurRadius;
 		cellId.averageDuration = averageDuration;
 		[snapshot appendItemsWithIdentifiers:@[ cellId ]];

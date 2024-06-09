@@ -71,16 +71,14 @@ BlurVertexFunction(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]
 	return output;
 }
 
-fragment float4
-BlurFragmentFunction(BlurRasterizerData input [[stage_in]], constant float2 &resolution,
-        constant float &scale_factor, constant uint &horizontal, const device float *blur_radii,
+float4
+Blur(BlurRasterizerData input, float2 resolution, float blur_radius, uint horizontal,
         metal::texture2d<float> behind)
 {
-	float blur_radius = blur_radii[input.instance_id] * scale_factor;
+	metal::sampler sampler(metal::address::mirrored_repeat);
+
 	float sigma = blur_radius * 0.2;
 	short kernel_radius = (short)blur_radius;
-
-	metal::sampler sampler(metal::address::mirrored_repeat);
 
 	float4 result = 0;
 	float total_weight = 0;
@@ -126,4 +124,13 @@ BlurFragmentFunction(BlurRasterizerData input [[stage_in]], constant float2 &res
 	result /= total_weight;
 
 	return result;
+}
+
+fragment float4
+BlurFragmentFunction(BlurRasterizerData input [[stage_in]], constant float2 &resolution,
+        constant float &scale_factor, constant uint &horizontal, const device float *blur_radii,
+        metal::texture2d<float> behind)
+{
+	float blur_radius = blur_radii[input.instance_id] * scale_factor;
+	return Blur(input, resolution, blur_radius, horizontal, behind);
 }

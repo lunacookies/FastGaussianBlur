@@ -20,9 +20,16 @@
 
 @end
 
+typedef enum
+{
+	BlurImplementation_SampleEveryPixel
+} BlurImplementation;
+
 @implementation Renderer
 
-- (instancetype)initWithDevice:(id<MTLDevice>)device pixelFormat:(MTLPixelFormat)pixelFormat
+- (instancetype)initWithDevice:(id<MTLDevice>)device
+                   pixelFormat:(MTLPixelFormat)pixelFormat
+            blurImplementation:(BlurImplementation)blurImplementation
 {
 	self = [super init];
 
@@ -55,8 +62,15 @@
 		MTLRenderPipelineDescriptor *descriptor =
 		        [[MTLRenderPipelineDescriptor alloc] init];
 		descriptor.colorAttachments[0].pixelFormat = self.pixelFormat;
-		descriptor.vertexFunction = [library newFunctionWithName:@"BlurVertexFunction"];
-		descriptor.fragmentFunction = [library newFunctionWithName:@"BlurFragmentFunction"];
+
+		if (blurImplementation == BlurImplementation_SampleEveryPixel)
+		{
+			descriptor.vertexFunction =
+			        [library newFunctionWithName:@"BlurVertexFunction"];
+			descriptor.fragmentFunction =
+			        [library newFunctionWithName:@"BlurFragmentFunction"];
+		}
+
 		self.pipelineStateBlur =
 		        [self.device newRenderPipelineStateWithDescriptor:descriptor error:nil];
 	}

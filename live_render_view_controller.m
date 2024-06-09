@@ -1,7 +1,15 @@
 @interface LiveRenderView : NSView
+{
+	BlurImplementation _blurImplementation;
+}
+
+@property id<MTLDevice> device;
 @property CAMetalLayer *metalLayer;
 @property CADisplayLink *displayLink;
 @property Renderer *renderer;
+@property(getter=blurImplementation, setter=setBlurImplementation:)
+        BlurImplementation blurImplementation;
+
 @end
 
 @implementation LiveRenderView
@@ -10,16 +18,13 @@
 {
 	self = [super initWithFrame:frame];
 
-	id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+	self.device = MTLCreateSystemDefaultDevice();
 
 	self.wantsLayer = YES;
 	self.layer = [CAMetalLayer layer];
 	self.metalLayer = (CAMetalLayer *)self.layer;
-	self.metalLayer.device = device;
+	self.metalLayer.device = self.device;
 	self.metalLayer.framebufferOnly = NO;
-
-	self.renderer = [[Renderer alloc] initWithDevice:device
-	                                     pixelFormat:self.metalLayer.pixelFormat];
 
 	self.displayLink = [self displayLinkWithTarget:self selector:@selector(render)];
 	[self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
@@ -33,6 +38,20 @@
 	id<MTLCommandBuffer> commandBuffer = [self.renderer render:drawable.texture];
 	[commandBuffer presentDrawable:drawable];
 	[commandBuffer commit];
+}
+
+- (BlurImplementation)blurImplementation
+{
+	return _blurImplementation;
+}
+
+- (void)setBlurImplementation:(BlurImplementation)blurImplementation
+{
+	_blurImplementation = blurImplementation;
+	self.renderer = [[Renderer alloc] initWithDevice:self.device
+	                                     pixelFormat:self.metalLayer.pixelFormat
+	                              blurImplementation:self.blurImplementation];
+	[self updateTextures];
 }
 
 - (void)viewDidChangeBackingProperties
@@ -72,6 +91,7 @@
 @interface LiveRenderViewController : NSViewController
 @property LiveRenderView *liveRenderView;
 @property NSStackView *inspector;
+@property NSButton *sampleEveryPixelRadioButton;
 @property NSTextField *blurRadiusLabel;
 @property NSSlider *blurRadiusSlider;
 @end
@@ -98,6 +118,15 @@
 	NSTextField *titleLabel = [NSTextField labelWithString:@"Inspector"];
 	titleLabel.font = [NSFont boldSystemFontOfSize:16];
 	[self.inspector addArrangedSubview:titleLabel];
+
+	NSTextField *implementationLabel = [NSTextField labelWithString:@"Blur Implementation:"];
+	[self.inspector addArrangedSubview:implementationLabel];
+
+	self.sampleEveryPixelRadioButton =
+	        [NSButton radioButtonWithTitle:@"Sample Every Pixel"
+	                                target:self
+	                                action:@selector(updateConfiguration:)];
+	[self.inspector addArrangedSubview:self.sampleEveryPixelRadioButton];
 
 	self.blurRadiusLabel = [NSTextField labelWithString:@""];
 	[self.inspector addArrangedSubview:self.blurRadiusLabel];
@@ -132,7 +161,7 @@
 		[self.inspector.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor
 		                                            constant:-padding],
 
-		[titleLabel.bottomAnchor constraintEqualToAnchor:self.blurRadiusLabel.topAnchor
+		[titleLabel.bottomAnchor constraintEqualToAnchor:implementationLabel.topAnchor
 		                                        constant:-24],
 		[self.blurRadiusSlider.widthAnchor constraintGreaterThanOrEqualToConstant:150],
 	]];
@@ -140,6 +169,11 @@
 
 - (void)updateConfiguration:(id)sender
 {
+	if (sender == self.sampleEveryPixelRadioButton)
+	{
+		self.liveRenderView.blurImplementation = BlurImplementation_SampleEveryPixel;
+	}
+
 	self.blurRadiusLabel.stringValue =
 	        [NSString stringWithFormat:@"Blur Radius: %.02f", self.blurRadiusSlider.floatValue];
 	self.liveRenderView.renderer.blurRadius = self.blurRadiusSlider.floatValue;
