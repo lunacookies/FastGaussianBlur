@@ -15,7 +15,7 @@ main(void)
 	setenv("MTL_HUD_ENABLED", "1", 1);
 	setenv("MTL_SHADER_VALIDATION", "1", 1);
 	setenv("MTL_DEBUG_LAYER", "1", 1);
-	setenv("MTL_DEBUG_LAYER_WARNING_MODE", "assert", 1);
+	setenv("MTL_DEBUG_LAYER_WARNING_MODE", "nslog", 1);
 
 	@autoreleasepool
 	{
