@@ -80,7 +80,7 @@ NSString *BlurRadiusColumnIdentifier = @"BlurRadius";
 		                                             blurImplementation]];
 		durationColumn.title = [[NSString alloc]
 		        initWithUTF8String:BlurImplementationNames[blurImplementation]];
-		durationColumn.width = 120;
+		durationColumn.width = 160;
 		durationColumn.resizingMask = 0;
 		[self.resultsTableView addTableColumn:durationColumn];
 	}
@@ -165,7 +165,8 @@ RunBenchmark(NSProgress *progress, NSTableViewDiffableDataSource *dataSource)
 	descriptor.width = width;
 	descriptor.height = height;
 	descriptor.pixelFormat = pixelFormat;
-	descriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+	descriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead |
+	                   MTLTextureUsageShaderWrite;
 	descriptor.storageMode = MTLStorageModePrivate;
 	id<MTLTexture> target = [device newTextureWithDescriptor:descriptor];
 

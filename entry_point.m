@@ -1,5 +1,6 @@
 @import AppKit;
 @import Metal;
+@import MetalPerformanceShaders;
 @import QuartzCore;
 @import simd;
 

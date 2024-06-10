@@ -57,7 +57,8 @@ struct BlurRasterizerData
 
 vertex BlurRasterizerData
 BlurVertexFunction(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]],
-        constant float2 &resolution, constant float &scale_factor, const device float2 *positions,
+        constant float2 &resolution, constant float &scale_factor,
+        constant float &output_scale_factor, const device float2 *positions,
         const device float2 *sizes)
 {
 	float2 position = positions[instance_id] * scale_factor;
@@ -65,8 +66,8 @@ BlurVertexFunction(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]
 
 	BlurRasterizerData output = {0};
 	output.position = NDCFromScreenSpace(vertex_id, position, size, resolution);
-	output.p0 = position;
-	output.p1 = position + size;
+	output.p0 = position * output_scale_factor;
+	output.p1 = (position + size) * output_scale_factor;
 	output.instance_id = instance_id;
 	return output;
 }

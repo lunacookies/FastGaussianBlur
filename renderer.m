@@ -2,12 +2,16 @@ typedef enum
 {
 	BlurImplementation_SampleEveryPixel,
 	BlurImplementation_SamplePixelQuads,
+	BlurImplementation_SampleEveryPixelQuarterRes,
+	BlurImplementation_SamplePixelQuadsQuarterRes,
 	BlurImplementation__Count,
 } BlurImplementation;
 
 static char *BlurImplementationNames[] = {
         "Sample Every Pixel",
         "Sample Pixel Quads",
+        "Sample Every Pixel (¼ Res)",
+        "Sample Pixel Quads (¼ Res)",
 };
 
 @interface Renderer : NSObject
@@ -19,10 +23,15 @@ static char *BlurImplementationNames[] = {
 @property float scaleFactor;
 @property MTLPixelFormat pixelFormat;
 @property id<MTLTexture> offscreenTexture;
+@property id<MTLTexture> offscreenTextureQuarterRes1;
+@property id<MTLTexture> offscreenTextureQuarterRes2;
 
 @property id<MTLRenderPipelineState> pipelineState;
 @property id<MTLRenderPipelineState> pipelineStateBlurSampleEveryPixel;
 @property id<MTLRenderPipelineState> pipelineStateBlurSamplePixelQuads;
+
+@property MPSImageBilinearScale *upscaleKernel;
+@property MPSImageBilinearScale *downscaleKernel;
 
 @property uint64_t boxCount;
 @property simd_float2 *boxPositions;
@@ -111,6 +120,18 @@ RngNextFloat(Rng *rng)
 		self.pipelineStateBlurSamplePixelQuads =
 		        [self.device newRenderPipelineStateWithDescriptor:descriptor error:nil];
 	}
+
+	self.upscaleKernel = [[MPSImageBilinearScale alloc] initWithDevice:self.device];
+	self.downscaleKernel = [[MPSImageBilinearScale alloc] initWithDevice:self.device];
+
+	MPSScaleTransform upscaleTransform = {0};
+	MPSScaleTransform downscaleTransform = {0};
+	upscaleTransform.scaleX = 2;
+	upscaleTransform.scaleY = 2;
+	downscaleTransform.scaleX = 0.5;
+	downscaleTransform.scaleY = 0.5;
+	self.upscaleKernel.scaleTransform = &upscaleTransform;
+	self.downscaleKernel.scaleTransform = &downscaleTransform;
 
 	uint64_t rows = 5;
 	uint64_t columns = 10;
@@ -266,12 +287,40 @@ RngNextFloat(Rng *rng)
                                            blurRadii:(float *)blurRadii
                                                count:(uint64_t)count
 {
+	float outputScaleFactor = 0;
+
+	switch (self.blurImplementation)
 	{
-		MTLBlitPassDescriptor *descriptor = [[MTLBlitPassDescriptor alloc] init];
-		id<MTLBlitCommandEncoder> encoder =
-		        [commandBuffer blitCommandEncoderWithDescriptor:descriptor];
-		[encoder copyFromTexture:target toTexture:self.offscreenTexture];
-		[encoder endEncoding];
+		case BlurImplementation_SampleEveryPixel:
+		case BlurImplementation_SamplePixelQuads:
+		{
+			outputScaleFactor = 1;
+			MTLBlitPassDescriptor *descriptor = [[MTLBlitPassDescriptor alloc] init];
+			id<MTLBlitCommandEncoder> encoder =
+			        [commandBuffer blitCommandEncoderWithDescriptor:descriptor];
+			[encoder copyFromTexture:target toTexture:self.offscreenTexture];
+			[encoder endEncoding];
+		}
+		break;
+
+		case BlurImplementation_SampleEveryPixelQuarterRes:
+		case BlurImplementation_SamplePixelQuadsQuarterRes:
+		{
+			outputScaleFactor = 0.5;
+			[self.downscaleKernel
+			        encodeToCommandBuffer:commandBuffer
+			                sourceTexture:target
+			           destinationTexture:self.offscreenTextureQuarterRes1];
+			MTLBlitPassDescriptor *descriptor = [[MTLBlitPassDescriptor alloc] init];
+			id<MTLBlitCommandEncoder> encoder =
+			        [commandBuffer blitCommandEncoderWithDescriptor:descriptor];
+			[encoder copyFromTexture:self.offscreenTextureQuarterRes1
+			               toTexture:self.offscreenTextureQuarterRes2];
+			[encoder endEncoding];
+		}
+		break;
+
+		case BlurImplementation__Count: break;
 	}
 
 	simd_float2 resolution = self.size * self.scaleFactor;
@@ -280,18 +329,45 @@ RngNextFloat(Rng *rng)
 
 	for (uint32_t horizontal = 0; horizontal <= 1; horizontal++)
 	{
+		id<MTLTexture> sourceTexture = nil;
+		id<MTLTexture> destinationTexture = nil;
+
+		switch (self.blurImplementation)
+		{
+			case BlurImplementation_SampleEveryPixel:
+			case BlurImplementation_SamplePixelQuads:
+				if (horizontal)
+				{
+					destinationTexture = target;
+					sourceTexture = self.offscreenTexture;
+				}
+				else
+				{
+					destinationTexture = self.offscreenTexture;
+					sourceTexture = target;
+				}
+				break;
+
+			case BlurImplementation_SampleEveryPixelQuarterRes:
+			case BlurImplementation_SamplePixelQuadsQuarterRes:
+				if (horizontal)
+				{
+					destinationTexture = self.offscreenTextureQuarterRes1;
+					sourceTexture = self.offscreenTextureQuarterRes2;
+				}
+				else
+				{
+					destinationTexture = self.offscreenTextureQuarterRes2;
+					sourceTexture = self.offscreenTextureQuarterRes1;
+				}
+				break;
+
+			case BlurImplementation__Count: break;
+		}
+
 		MTLRenderPassDescriptor *descriptor =
 		        [MTLRenderPassDescriptor renderPassDescriptor];
-
-		if (horizontal)
-		{
-			descriptor.colorAttachments[0].texture = target;
-		}
-		else
-		{
-			descriptor.colorAttachments[0].texture = self.offscreenTexture;
-		}
-
+		descriptor.colorAttachments[0].texture = destinationTexture;
 		descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
 		descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
 
@@ -300,11 +376,13 @@ RngNextFloat(Rng *rng)
 		switch (self.blurImplementation)
 		{
 			case BlurImplementation_SampleEveryPixel:
+			case BlurImplementation_SampleEveryPixelQuarterRes:
 				[encoder setRenderPipelineState:
 				                 self.pipelineStateBlurSampleEveryPixel];
 				break;
 
 			case BlurImplementation_SamplePixelQuads:
+			case BlurImplementation_SamplePixelQuadsQuarterRes:
 				[encoder setRenderPipelineState:
 				                 self.pipelineStateBlurSamplePixelQuads];
 				break;
@@ -314,21 +392,24 @@ RngNextFloat(Rng *rng)
 
 		[encoder setVertexBytes:&resolution length:sizeof(resolution) atIndex:0];
 		[encoder setVertexBytes:&_scaleFactor length:sizeof(_scaleFactor) atIndex:1];
-		[encoder setVertexBytes:positions length:sizeof(simd_float2) * count atIndex:2];
-		[encoder setVertexBytes:sizes length:sizeof(simd_float2) * count atIndex:3];
-		[encoder setFragmentBytes:&resolution length:sizeof(resolution) atIndex:0];
-		[encoder setFragmentBytes:&_scaleFactor length:sizeof(_scaleFactor) atIndex:1];
+		[encoder setVertexBytes:&outputScaleFactor
+		                 length:sizeof(outputScaleFactor)
+		                atIndex:2];
+		[encoder setVertexBytes:positions length:sizeof(simd_float2) * count atIndex:3];
+		[encoder setVertexBytes:sizes length:sizeof(simd_float2) * count atIndex:4];
+
+		simd_float2 downscaledResolution = resolution * outputScaleFactor;
+		float downscaledScaleFactor = self.scaleFactor * outputScaleFactor;
+
+		[encoder setFragmentBytes:&downscaledResolution
+		                   length:sizeof(downscaledResolution)
+		                  atIndex:0];
+		[encoder setFragmentBytes:&downscaledScaleFactor
+		                   length:sizeof(downscaledScaleFactor)
+		                  atIndex:1];
 		[encoder setFragmentBytes:&horizontal length:sizeof(horizontal) atIndex:2];
 		[encoder setFragmentBytes:blurRadii length:sizeof(float) * count atIndex:3];
-
-		if (horizontal)
-		{
-			[encoder setFragmentTexture:self.offscreenTexture atIndex:0];
-		}
-		else
-		{
-			[encoder setFragmentTexture:target atIndex:0];
-		}
+		[encoder setFragmentTexture:sourceTexture atIndex:0];
 
 		[encoder drawPrimitives:MTLPrimitiveTypeTriangle
 		            vertexStart:0
@@ -339,6 +420,31 @@ RngNextFloat(Rng *rng)
 		{
 			[encoder endEncoding];
 		}
+	}
+
+	switch (self.blurImplementation)
+	{
+		case BlurImplementation_SampleEveryPixelQuarterRes:
+		case BlurImplementation_SamplePixelQuadsQuarterRes:
+		{
+			[encoder endEncoding];
+			[self.upscaleKernel encodeToCommandBuffer:commandBuffer
+			                            sourceTexture:self.offscreenTextureQuarterRes1
+			                       destinationTexture:target];
+
+			MTLRenderPassDescriptor *descriptor =
+			        [MTLRenderPassDescriptor renderPassDescriptor];
+			descriptor.colorAttachments[0].texture = target;
+			descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+			descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
+			encoder = [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
+		}
+		break;
+
+		case BlurImplementation_SampleEveryPixel:
+		case BlurImplementation_SamplePixelQuads: break;
+
+		case BlurImplementation__Count: break;
 	}
 
 	return encoder;
@@ -353,11 +459,20 @@ RngNextFloat(Rng *rng)
 	descriptor.width = (NSUInteger)(self.size.x * self.scaleFactor);
 	descriptor.height = (NSUInteger)(self.size.y * self.scaleFactor);
 	descriptor.self.pixelFormat = self.pixelFormat;
-	descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
+	descriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead |
+	                   MTLTextureUsageShaderWrite;
 	descriptor.storageMode = MTLStorageModePrivate;
 
 	self.offscreenTexture = [self.device newTextureWithDescriptor:descriptor];
 	self.offscreenTexture.label = @"Offscreen Texture";
+
+	descriptor.width /= 2;
+	descriptor.height /= 2;
+
+	self.offscreenTextureQuarterRes1 = [self.device newTextureWithDescriptor:descriptor];
+	self.offscreenTextureQuarterRes2 = [self.device newTextureWithDescriptor:descriptor];
+	self.offscreenTextureQuarterRes1.label = @"¼ Res Offscreen Texture 1";
+	self.offscreenTextureQuarterRes2.label = @"¼ Res Offscreen Texture 2";
 }
 
 @end
