@@ -121,12 +121,10 @@ struct BlurImplementationRadioButtons
 	for (BlurImplementation blurImplementation = 0;
 	        blurImplementation < BlurImplementation__Count; blurImplementation++)
 	{
-		NSButton *radioButton = [NSButton
-		        radioButtonWithTitle:
-		                [[NSString alloc] initWithUTF8String:BlurImplementationNames
-		                                                             [blurImplementation]]
-		                      target:self
-		                      action:@selector(updateConfiguration:)];
+		NSButton *radioButton =
+		        [NSButton radioButtonWithTitle:BlurImplementationNames[blurImplementation]
+		                                target:self
+		                                action:@selector(updateConfiguration:)];
 		radioButtons.buttons[blurImplementation] = radioButton;
 		[self.inspector addArrangedSubview:radioButton];
 	}

@@ -7,11 +7,11 @@ typedef enum
 	BlurImplementation__Count,
 } BlurImplementation;
 
-static char *BlurImplementationNames[] = {
-        "Sample Every Pixel",
-        "Sample Pixel Quads",
-        "Sample Every Pixel (¼ Res)",
-        "Sample Pixel Quads (¼ Res)",
+static NSString *BlurImplementationNames[] = {
+        @"Sample Every Pixel",
+        @"Sample Pixel Quads",
+        @"Sample Every Pixel (¼ Res)",
+        @"Sample Pixel Quads (¼ Res)",
 };
 
 @interface Renderer : NSObject
