@@ -1,3 +1,15 @@
+typedef enum
+{
+	BlurImplementation_SampleEveryPixel,
+	BlurImplementation_SamplePixelQuads,
+	BlurImplementation__Count,
+} BlurImplementation;
+
+static char *BlurImplementationNames[] = {
+        "Sample Every Pixel",
+        "Sample Pixel Quads",
+};
+
 @interface Renderer : NSObject
 
 @property id<MTLDevice> device;
@@ -9,23 +21,18 @@
 @property id<MTLTexture> offscreenTexture;
 
 @property id<MTLRenderPipelineState> pipelineState;
-@property id<MTLRenderPipelineState> pipelineStateBlur;
+@property id<MTLRenderPipelineState> pipelineStateBlurSampleEveryPixel;
+@property id<MTLRenderPipelineState> pipelineStateBlurSamplePixelQuads;
 
 @property uint64_t boxCount;
 @property simd_float2 *boxPositions;
 @property simd_float2 *boxSizes;
 @property simd_float4 *boxColors;
 
+@property BlurImplementation blurImplementation;
 @property float blurRadius;
 
 @end
-
-typedef enum
-{
-	BlurImplementation_SampleEveryPixel,
-	BlurImplementation_SamplePixelQuads,
-	BlurImplementation__Count,
-} BlurImplementation;
 
 typedef struct Rng Rng;
 struct Rng
@@ -54,9 +61,7 @@ RngNextFloat(Rng *rng)
 
 @implementation Renderer
 
-- (instancetype)initWithDevice:(id<MTLDevice>)device
-                   pixelFormat:(MTLPixelFormat)pixelFormat
-            blurImplementation:(BlurImplementation)blurImplementation
+- (instancetype)initWithDevice:(id<MTLDevice>)device pixelFormat:(MTLPixelFormat)pixelFormat
 {
 	self = [super init];
 
@@ -89,27 +94,21 @@ RngNextFloat(Rng *rng)
 		MTLRenderPipelineDescriptor *descriptor =
 		        [[MTLRenderPipelineDescriptor alloc] init];
 		descriptor.colorAttachments[0].pixelFormat = self.pixelFormat;
+		descriptor.vertexFunction = [library newFunctionWithName:@"BlurVertexFunction"];
+		descriptor.fragmentFunction =
+		        [library newFunctionWithName:@"BlurFragmentFunctionSampleEveryPixel"];
+		self.pipelineStateBlurSampleEveryPixel =
+		        [self.device newRenderPipelineStateWithDescriptor:descriptor error:nil];
+	}
 
-		switch (blurImplementation)
-		{
-			case BlurImplementation_SampleEveryPixel:
-				descriptor.vertexFunction =
-				        [library newFunctionWithName:@"BlurVertexFunction"];
-				descriptor.fragmentFunction =
-				        [library newFunctionWithName:
-				                         @"BlurFragmentFunctionSampleEveryPixel"];
-				break;
-			case BlurImplementation_SamplePixelQuads:
-				descriptor.vertexFunction =
-				        [library newFunctionWithName:@"BlurVertexFunction"];
-				descriptor.fragmentFunction =
-				        [library newFunctionWithName:
-				                         @"BlurFragmentFunctionSamplePixelQuads"];
-				break;
-			case BlurImplementation__Count: break;
-		}
-
-		self.pipelineStateBlur =
+	{
+		MTLRenderPipelineDescriptor *descriptor =
+		        [[MTLRenderPipelineDescriptor alloc] init];
+		descriptor.colorAttachments[0].pixelFormat = self.pixelFormat;
+		descriptor.vertexFunction = [library newFunctionWithName:@"BlurVertexFunction"];
+		descriptor.fragmentFunction =
+		        [library newFunctionWithName:@"BlurFragmentFunctionSamplePixelQuads"];
+		self.pipelineStateBlurSamplePixelQuads =
 		        [self.device newRenderPipelineStateWithDescriptor:descriptor error:nil];
 	}
 
@@ -298,7 +297,20 @@ RngNextFloat(Rng *rng)
 
 		encoder = [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
 
-		[encoder setRenderPipelineState:self.pipelineStateBlur];
+		switch (self.blurImplementation)
+		{
+			case BlurImplementation_SampleEveryPixel:
+				[encoder setRenderPipelineState:
+				                 self.pipelineStateBlurSampleEveryPixel];
+				break;
+
+			case BlurImplementation_SamplePixelQuads:
+				[encoder setRenderPipelineState:
+				                 self.pipelineStateBlurSamplePixelQuads];
+				break;
+
+			case BlurImplementation__Count: break;
+		}
 
 		[encoder setVertexBytes:&resolution length:sizeof(resolution) atIndex:0];
 		[encoder setVertexBytes:&_scaleFactor length:sizeof(_scaleFactor) atIndex:1];

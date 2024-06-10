@@ -7,8 +7,6 @@
 @property CAMetalLayer *metalLayer;
 @property CADisplayLink *displayLink;
 @property Renderer *renderer;
-@property(getter=blurImplementation, setter=setBlurImplementation:)
-        BlurImplementation blurImplementation;
 
 @end
 
@@ -26,6 +24,9 @@
 	self.metalLayer.device = self.device;
 	self.metalLayer.framebufferOnly = NO;
 
+	self.renderer = [[Renderer alloc] initWithDevice:self.device
+	                                     pixelFormat:self.metalLayer.pixelFormat];
+
 	self.displayLink = [self displayLinkWithTarget:self selector:@selector(render)];
 	[self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 
@@ -38,20 +39,6 @@
 	id<MTLCommandBuffer> commandBuffer = [self.renderer render:drawable.texture];
 	[commandBuffer presentDrawable:drawable];
 	[commandBuffer commit];
-}
-
-- (BlurImplementation)blurImplementation
-{
-	return _blurImplementation;
-}
-
-- (void)setBlurImplementation:(BlurImplementation)blurImplementation
-{
-	_blurImplementation = blurImplementation;
-	self.renderer = [[Renderer alloc] initWithDevice:self.device
-	                                     pixelFormat:self.metalLayer.pixelFormat
-	                              blurImplementation:self.blurImplementation];
-	[self updateTextures];
 }
 
 - (void)viewDidChangeBackingProperties
@@ -178,11 +165,13 @@
 {
 	if (sender == self.sampleEveryPixelRadioButton)
 	{
-		self.liveRenderView.blurImplementation = BlurImplementation_SampleEveryPixel;
+		self.liveRenderView.renderer.blurImplementation =
+		        BlurImplementation_SampleEveryPixel;
 	}
 	else if (sender == self.samplePixelQuadsRadioButton)
 	{
-		self.liveRenderView.blurImplementation = BlurImplementation_SamplePixelQuads;
+		self.liveRenderView.renderer.blurImplementation =
+		        BlurImplementation_SamplePixelQuads;
 	}
 
 	self.blurRadiusLabel.stringValue =

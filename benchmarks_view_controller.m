@@ -5,10 +5,15 @@
 @property NSTableViewDiffableDataSource *dataSource;
 @end
 
+typedef struct BlurImplementationToDurationMap BlurImplementationToDurationMap;
+struct BlurImplementationToDurationMap
+{
+	double durations[BlurImplementation__Count];
+};
+
 @interface CellId : NSObject
-@property BlurImplementation blurImplementation;
 @property float blurRadius;
-@property double averageDuration;
+@property BlurImplementationToDurationMap durationsMap;
 @end
 
 @implementation CellId
@@ -16,9 +21,7 @@
 
 @implementation BenchmarksViewController
 
-NSString *BlurImplementationColumnIdentifier = @"BlurImplementation";
 NSString *BlurRadiusColumnIdentifier = @"BlurRadius";
-NSString *DurationColumnIdentifier = @"Duration";
 
 - (instancetype)init
 {
@@ -62,28 +65,25 @@ NSString *DurationColumnIdentifier = @"Duration";
 	self.resultsTableView = [[NSTableView alloc] init];
 	self.resultsTableView.allowsColumnReordering = NO;
 
-	NSTableColumn *blurImplementationColumn =
-	        [[NSTableColumn alloc] initWithIdentifier:BlurImplementationColumnIdentifier];
 	NSTableColumn *blurRadiusColumn =
 	        [[NSTableColumn alloc] initWithIdentifier:BlurRadiusColumnIdentifier];
-	NSTableColumn *durationColumn =
-	        [[NSTableColumn alloc] initWithIdentifier:DurationColumnIdentifier];
-
-	blurImplementationColumn.title = @"Blur Implementation";
 	blurRadiusColumn.title = @"Blur Radius";
-	durationColumn.title = @"Duration (ms)";
-
-	blurImplementationColumn.width = 160;
 	blurRadiusColumn.width = 80;
-	durationColumn.width = 80;
-
-	blurImplementationColumn.resizingMask = 0;
 	blurRadiusColumn.resizingMask = 0;
-	durationColumn.resizingMask = 0;
-
-	[self.resultsTableView addTableColumn:blurImplementationColumn];
 	[self.resultsTableView addTableColumn:blurRadiusColumn];
-	[self.resultsTableView addTableColumn:durationColumn];
+
+	for (BlurImplementation blurImplementation = 0;
+	        blurImplementation < BlurImplementation__Count; blurImplementation++)
+	{
+		NSTableColumn *durationColumn = [[NSTableColumn alloc]
+		        initWithIdentifier:[[NSString alloc] initWithFormat:@"Duration %d",
+		                                             blurImplementation]];
+		durationColumn.title = [[NSString alloc]
+		        initWithUTF8String:BlurImplementationNames[blurImplementation]];
+		durationColumn.width = 120;
+		durationColumn.resizingMask = 0;
+		[self.resultsTableView addTableColumn:durationColumn];
+	}
 
 	[self configureResultsTableViewDataSource];
 
@@ -107,29 +107,21 @@ NSString *DurationColumnIdentifier = @"Duration";
 	  }
 
 	  CellId *cellId = itemId;
-	  if ([column.identifier isEqualToString:BlurImplementationColumnIdentifier])
-	  {
-		  switch (cellId.blurImplementation)
-		  {
-			  case BlurImplementation_SampleEveryPixel:
-				  view.stringValue = @"Sample Every Pixel";
-				  break;
-			  case BlurImplementation_SamplePixelQuads:
-				  view.stringValue = @"Sample Pixel Quads";
-				  break;
-			  case BlurImplementation__Count: break;
-		  }
-	  }
-	  else if ([column.identifier isEqualToString:BlurRadiusColumnIdentifier])
+	  if ([column.identifier isEqualToString:BlurRadiusColumnIdentifier])
 	  {
 		  view.stringValue = [NSString stringWithFormat:@"%.02f", cellId.blurRadius];
 		  view.alignment = NSTextAlignmentRight;
 		  view.font = EnableTabularNumbers(view.font);
 	  }
-	  else if ([column.identifier isEqualToString:DurationColumnIdentifier])
+	  else
 	  {
+		  NSArray<NSString *> *components =
+			  [column.identifier componentsSeparatedByString:@" "];
+		  BlurImplementation blurImplementation =
+			  (BlurImplementation)components[1].intValue;
 		  view.stringValue =
-			  [NSString stringWithFormat:@"%.2f", cellId.averageDuration * 1000];
+			  [NSString stringWithFormat:@"%.2f",
+			            cellId.durationsMap.durations[blurImplementation] * 1000];
 		  view.alignment = NSTextAlignmentRight;
 		  view.font = EnableTabularNumbers(view.font);
 	  }
@@ -190,18 +182,31 @@ RunBenchmark(NSProgress *progress, NSTableViewDiffableDataSource *dataSource)
 	float blurRadiusMaximum = 300;
 	float blurRadiusStep = (blurRadiusMaximum - blurRadiusMinimum) / (blurRadiusCount - 1);
 
+	NSMutableString *csv = [[NSMutableString alloc] init];
+
+	[csv appendString:@"Blur Radius"];
 	for (BlurImplementation blurImplementation = 0;
 	        blurImplementation < BlurImplementation__Count; blurImplementation++)
 	{
-		for (float blurRadius = blurRadiusMinimum; blurRadius <= blurRadiusMaximum;
-		        blurRadius += blurRadiusStep)
-		{
-			Renderer *renderer =
-			        [[Renderer alloc] initWithDevice:device
-			                             pixelFormat:MTLPixelFormatBGRA8Unorm
-			                      blurImplementation:blurImplementation];
+		[csv appendFormat:@",%s", BlurImplementationNames[blurImplementation]];
+	}
+	[csv appendString:@"\n"];
 
-			[renderer setSize:size scaleFactor:scaleFactor];
+	Renderer *renderer = [[Renderer alloc] initWithDevice:device
+	                                          pixelFormat:MTLPixelFormatBGRA8Unorm];
+	[renderer setSize:size scaleFactor:scaleFactor];
+
+	for (float blurRadius = blurRadiusMinimum; blurRadius <= blurRadiusMaximum;
+	        blurRadius += blurRadiusStep)
+	{
+		[csv appendFormat:@"%.02f,", blurRadius];
+
+		BlurImplementationToDurationMap durationsMap = {0};
+
+		for (BlurImplementation blurImplementation = 0;
+		        blurImplementation < BlurImplementation__Count; blurImplementation++)
+		{
+			renderer.blurImplementation = blurImplementation;
 			renderer.blurRadius = blurRadius;
 
 			double averageDuration = 0;
@@ -219,18 +224,34 @@ RunBenchmark(NSProgress *progress, NSTableViewDiffableDataSource *dataSource)
 			}
 
 			averageDuration /= trialCount;
+			durationsMap.durations[blurImplementation] = averageDuration;
 
-			CellId *cellId = [[CellId alloc] init];
-			cellId.blurImplementation = blurImplementation;
-			cellId.blurRadius = blurRadius;
-			cellId.averageDuration = averageDuration;
-			[snapshot appendItemsWithIdentifiers:@[ cellId ]];
-
-			dispatch_sync(dispatch_get_main_queue(), ^{
-			  [dataSource applySnapshot:snapshot animatingDifferences:YES];
-			});
+			if (blurImplementation != 0)
+			{
+				[csv appendString:@","];
+			}
+			[csv appendFormat:@"%.02f", averageDuration * 1000];
 		}
+
+		[csv appendString:@"\n"];
+
+		CellId *cellId = [[CellId alloc] init];
+		cellId.blurRadius = blurRadius;
+		cellId.durationsMap = durationsMap;
+		[snapshot appendItemsWithIdentifiers:@[ cellId ]];
+
+		dispatch_sync(dispatch_get_main_queue(), ^{
+		  [dataSource applySnapshot:snapshot animatingDifferences:YES];
+		});
 	}
+
+	NSString *documentsDirectory =
+	        NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES)[0];
+
+	[csv writeToFile:[documentsDirectory stringByAppendingPathComponent:@"benchmark.csv"]
+	        atomically:YES
+	          encoding:NSUTF8StringEncoding
+	             error:nil];
 }
 
 static NSFont *
