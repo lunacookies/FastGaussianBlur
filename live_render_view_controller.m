@@ -75,10 +75,16 @@
 
 @end
 
+typedef struct BlurImplementationRadioButtons BlurImplementationRadioButtons;
+struct BlurImplementationRadioButtons
+{
+	NSButton *buttons[BlurImplementation__Count];
+};
+
 @interface LiveRenderViewController : NSViewController
 @property LiveRenderView *liveRenderView;
 @property NSStackView *inspector;
-@property NSButton *sampleEveryPixelRadioButton;
+@property BlurImplementationRadioButtons blurImplementationRadioButtons;
 @property NSButton *samplePixelQuadsRadioButton;
 @property NSTextField *blurRadiusLabel;
 @property NSSlider *blurRadiusSlider;
@@ -110,17 +116,22 @@
 	NSTextField *implementationLabel = [NSTextField labelWithString:@"Blur Implementation:"];
 	[self.inspector addArrangedSubview:implementationLabel];
 
-	self.sampleEveryPixelRadioButton =
-	        [NSButton radioButtonWithTitle:@"Sample Every Pixel"
-	                                target:self
-	                                action:@selector(updateConfiguration:)];
-	[self.inspector addArrangedSubview:self.sampleEveryPixelRadioButton];
+	BlurImplementationRadioButtons radioButtons = {0};
 
-	self.samplePixelQuadsRadioButton =
-	        [NSButton radioButtonWithTitle:@"Sample Pixel Quads"
-	                                target:self
-	                                action:@selector(updateConfiguration:)];
-	[self.inspector addArrangedSubview:self.samplePixelQuadsRadioButton];
+	for (BlurImplementation blurImplementation = 0;
+	        blurImplementation < BlurImplementation__Count; blurImplementation++)
+	{
+		NSButton *radioButton = [NSButton
+		        radioButtonWithTitle:
+		                [[NSString alloc] initWithUTF8String:BlurImplementationNames
+		                                                             [blurImplementation]]
+		                      target:self
+		                      action:@selector(updateConfiguration:)];
+		radioButtons.buttons[blurImplementation] = radioButton;
+		[self.inspector addArrangedSubview:radioButton];
+	}
+
+	self.blurImplementationRadioButtons = radioButtons;
 
 	self.blurRadiusLabel = [NSTextField labelWithString:@""];
 	[self.inspector addArrangedSubview:self.blurRadiusLabel];
@@ -163,15 +174,14 @@
 
 - (void)updateConfiguration:(id)sender
 {
-	if (sender == self.sampleEveryPixelRadioButton)
+	for (BlurImplementation blurImplementation = 0;
+	        blurImplementation < BlurImplementation__Count; blurImplementation++)
 	{
-		self.liveRenderView.renderer.blurImplementation =
-		        BlurImplementation_SampleEveryPixel;
-	}
-	else if (sender == self.samplePixelQuadsRadioButton)
-	{
-		self.liveRenderView.renderer.blurImplementation =
-		        BlurImplementation_SamplePixelQuads;
+		if (sender == self.blurImplementationRadioButtons.buttons[blurImplementation])
+		{
+			self.liveRenderView.renderer.blurImplementation = blurImplementation;
+			break;
+		}
 	}
 
 	self.blurRadiusLabel.stringValue =
