@@ -19,6 +19,50 @@ struct BlurImplementationToDurationMap
 @implementation CellId
 @end
 
+NSString *ResultsTableCellViewIdentifier = @"ResultsTableCellView";
+
+@interface ResultsTableCellView : NSView
+@property NSTextField *textField;
+@end
+
+@implementation ResultsTableCellView
+
+- (instancetype)initWithFrame:(NSRect)frame
+{
+	self = [super initWithFrame:frame];
+	self.identifier = ResultsTableCellViewIdentifier;
+
+	self.textField = [NSTextField labelWithString:@""];
+	self.textField.alignment = NSTextAlignmentRight;
+	self.textField.font = EnableTabularNumbers(self.textField.font);
+
+	[self addSubview:self.textField];
+	self.textField.translatesAutoresizingMaskIntoConstraints = NO;
+	[NSLayoutConstraint activateConstraints:@[
+		[self.textField.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
+		[self.textField.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+		[self.textField.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+	]];
+
+	return self;
+}
+
+static NSFont *
+EnableTabularNumbers(NSFont *font)
+{
+	NSFontDescriptor *descriptor = [font.fontDescriptor fontDescriptorByAddingAttributes:@{
+		NSFontFeatureSettingsAttribute : @[
+			@{
+				NSFontFeatureTypeIdentifierKey : @(kNumberSpacingType),
+				NSFontFeatureSelectorIdentifierKey : @(kMonospacedNumbersSelector)
+			},
+		]
+	}];
+	return [NSFont fontWithDescriptor:descriptor size:font.pointSize];
+}
+
+@end
+
 @implementation BenchmarksViewController
 
 NSString *BlurRadiusColumnIdentifier = @"BlurRadius";
@@ -89,6 +133,8 @@ NSString *BlurRadiusColumnIdentifier = @"BlurRadius";
 	NSScrollView *scrollView = [[NSScrollView alloc] init];
 	scrollView.documentView = self.resultsTableView;
 	scrollView.hasVerticalScroller = YES;
+	scrollView.hasHorizontalScroller = YES;
+	scrollView.autohidesScrollers = YES;
 	[self.stackView addArrangedSubview:scrollView];
 }
 
@@ -96,21 +142,19 @@ NSString *BlurRadiusColumnIdentifier = @"BlurRadius";
 {
 	NSTableViewDiffableDataSourceCellProvider provider = ^(
 	        NSTableView *_tableView, NSTableColumn *column, NSInteger row, id itemId) {
-	  NSString *cellIdentifier = @"Cell";
-	  NSTextField *view = [self.resultsTableView makeViewWithIdentifier:cellIdentifier
-		                                                      owner:self];
+	  ResultsTableCellView *view =
+		  [self.resultsTableView makeViewWithIdentifier:ResultsTableCellViewIdentifier
+		                                          owner:self];
 	  if (view == nil)
 	  {
-		  view = [NSTextField labelWithString:@""];
-		  view.identifier = cellIdentifier;
+		  view = [[ResultsTableCellView alloc] init];
 	  }
 
 	  CellId *cellId = itemId;
 	  if ([column.identifier isEqualToString:BlurRadiusColumnIdentifier])
 	  {
-		  view.stringValue = [NSString stringWithFormat:@"%.02f", cellId.blurRadius];
-		  view.alignment = NSTextAlignmentRight;
-		  view.font = EnableTabularNumbers(view.font);
+		  view.textField.stringValue =
+			  [NSString stringWithFormat:@"%.02f", cellId.blurRadius];
 	  }
 	  else
 	  {
@@ -118,11 +162,9 @@ NSString *BlurRadiusColumnIdentifier = @"BlurRadius";
 			  [column.identifier componentsSeparatedByString:@" "];
 		  BlurImplementation blurImplementation =
 			  (BlurImplementation)components[1].intValue;
-		  view.stringValue =
+		  view.textField.stringValue =
 			  [NSString stringWithFormat:@"%.2f",
 			            cellId.durationsMap.durations[blurImplementation] * 1000];
-		  view.alignment = NSTextAlignmentRight;
-		  view.font = EnableTabularNumbers(view.font);
 	  }
 
 	  return view;
@@ -252,20 +294,6 @@ RunBenchmark(NSProgress *progress, NSTableViewDiffableDataSource *dataSource)
 	        atomically:YES
 	          encoding:NSUTF8StringEncoding
 	             error:nil];
-}
-
-static NSFont *
-EnableTabularNumbers(NSFont *font)
-{
-	NSFontDescriptor *descriptor = [font.fontDescriptor fontDescriptorByAddingAttributes:@{
-		NSFontFeatureSettingsAttribute : @[
-			@{
-				NSFontFeatureTypeIdentifierKey : @(kNumberSpacingType),
-				NSFontFeatureSelectorIdentifierKey : @(kMonospacedNumbersSelector)
-			},
-		]
-	}];
-	return [NSFont fontWithDescriptor:descriptor size:font.pointSize];
 }
 
 @end
