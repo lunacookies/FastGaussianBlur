@@ -21,7 +21,7 @@ main(void)
 	@autoreleasepool
 	{
 		[NSApplication sharedApplication];
-		[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+		NSApp.activationPolicy = NSApplicationActivationPolicyRegular;
 		AppDelegate *appDelegate = [[AppDelegate alloc] init];
 		NSApp.delegate = appDelegate;
 		[NSApp run];
