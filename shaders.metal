@@ -145,3 +145,25 @@ BlurFragmentFunctionSamplePixelQuads(BlurRasterizerData input [[stage_in]],
 	float blur_radius = blur_radii[input.instance_id] * scale_factor;
 	return Blur(input, resolution, blur_radius, horizontal, behind, 2, 0.5);
 }
+
+kernel void
+SampleEveryPixel(uint2 thread_position_int [[thread_position_in_grid]], constant uint &horizontal,
+        constant float2 &resolution, constant float &scale_factor, constant float2 &position_raw,
+        constant float2 &size_raw, constant float &blur_radius_raw,
+        metal::texture2d<float, metal::access::write> destination, metal::texture2d<float> source)
+{
+	float2 position = position_raw * scale_factor;
+	float2 size = size_raw * scale_factor;
+	float blur_radius = blur_radius_raw * scale_factor;
+
+	float2 thread_position = position + (float2)thread_position_int + 0.5;
+	thread_position_int += (uint2)position;
+
+	BlurRasterizerData data = {0};
+	data.position = float4(thread_position, 0, 1);
+	data.p0 = position;
+	data.p1 = position + size;
+
+	float4 output = Blur(data, resolution, blur_radius, horizontal, source, 1, 0);
+	destination.write(output, thread_position_int);
+}
