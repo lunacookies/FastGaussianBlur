@@ -9,12 +9,18 @@ constant float2 corners[] = {
         {0, 0},
 };
 
-float4
-NDCFromScreenSpace(uint vertex_id, float2 position, float2 size, float2 resolution)
+float2
+UVFromScreenSpace(uint vertex_id, float2 position, float2 size, float2 resolution)
 {
 	float2 corner = corners[vertex_id];
+	return (position + corner * size) / resolution;
+}
+
+float4
+NDCFromUV(float2 uv)
+{
 	float4 result = float4(0, 0, 0, 1);
-	result.xy = (position + corner * size) / resolution * 2 - 1;
+	result.xy = uv * 2 - 1;
 	result.y *= -1;
 	return result;
 }
@@ -22,6 +28,7 @@ NDCFromScreenSpace(uint vertex_id, float2 position, float2 size, float2 resoluti
 struct RasterizerData
 {
 	float4 position [[position]];
+	float2 position_uv;
 	float4 color;
 };
 
@@ -35,16 +42,24 @@ VertexFunction(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]],
 	float4 color = colors[instance_id];
 
 	RasterizerData output = {0};
-	output.position = NDCFromScreenSpace(vertex_id, position, size, resolution);
+	output.position_uv = UVFromScreenSpace(vertex_id, position, size, resolution);
+	output.position = NDCFromUV(output.position_uv);
 	output.color = color;
 	output.color.rgb *= color.a;
 	return output;
 }
 
 fragment float4
-FragmentFunction(RasterizerData input [[stage_in]])
+FragmentFunction(RasterizerData input [[stage_in]], metal::texture2d<float> blur_texture)
 {
-	return input.color;
+	metal::sampler sampler(metal::filter::linear);
+	float4 blurred_color = blur_texture.sample(sampler, input.position_uv);
+
+	// Alpha composite box color over blurred color.
+	float4 result = 0;
+	result.rgb = input.color.rgb + blurred_color.rgb * (1 - input.color.a);
+	result.a = input.color.a + blurred_color.a * (1 - input.color.a);
+	return result;
 }
 
 struct BlurRasterizerData
@@ -65,7 +80,8 @@ BlurVertexFunction(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]
 	float2 size = sizes[instance_id] * scale_factor;
 
 	BlurRasterizerData output = {0};
-	output.position = NDCFromScreenSpace(vertex_id, position, size, resolution);
+	float2 uv = UVFromScreenSpace(vertex_id, position, size, resolution);
+	output.position = NDCFromUV(uv);
 	output.p0 = position * output_scale_factor;
 	output.p1 = (position + size) * output_scale_factor;
 	output.instance_id = instance_id;

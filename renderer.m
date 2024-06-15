@@ -24,7 +24,8 @@ static NSString *BlurImplementationNames[] = {
 @property simd_float2 size;
 @property float scaleFactor;
 @property MTLPixelFormat pixelFormat;
-@property id<MTLTexture> offscreenTexture;
+@property id<MTLTexture> offscreenTexture1;
+@property id<MTLTexture> offscreenTexture2;
 @property id<MTLTexture> offscreenTextureQuarterRes1;
 @property id<MTLTexture> offscreenTextureQuarterRes2;
 
@@ -33,7 +34,6 @@ static NSString *BlurImplementationNames[] = {
 @property id<MTLRenderPipelineState> pipelineStateBlurSamplePixelQuads;
 @property id<MTLComputePipelineState> pipelineStateBlurSampleEveryPixelCompute;
 
-@property MPSImageBilinearScale *upscaleKernel;
 @property MPSImageBilinearScale *downscaleKernel;
 
 @property uint64_t boxCount;
@@ -131,16 +131,11 @@ RngNextFloat(Rng *rng)
 		                                                   error:nil];
 	}
 
-	self.upscaleKernel = [[MPSImageBilinearScale alloc] initWithDevice:self.device];
 	self.downscaleKernel = [[MPSImageBilinearScale alloc] initWithDevice:self.device];
 
-	MPSScaleTransform upscaleTransform = {0};
 	MPSScaleTransform downscaleTransform = {0};
-	upscaleTransform.scaleX = 2;
-	upscaleTransform.scaleY = 2;
 	downscaleTransform.scaleX = 0.5;
 	downscaleTransform.scaleY = 0.5;
-	self.upscaleKernel.scaleTransform = &upscaleTransform;
 	self.downscaleKernel.scaleTransform = &downscaleTransform;
 
 	uint64_t rows = 5;
@@ -182,21 +177,26 @@ RngNextFloat(Rng *rng)
 {
 	id<MTLCommandBuffer> commandBuffer = [self.commandQueue commandBuffer];
 
-	MTLRenderPassDescriptor *descriptor = [MTLRenderPassDescriptor renderPassDescriptor];
-	descriptor.colorAttachments[0].texture = target;
-	descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
-	descriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
-	descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.5, 0.5, 1);
+	{
+		MTLRenderPassDescriptor *descriptor =
+		        [MTLRenderPassDescriptor renderPassDescriptor];
+		descriptor.colorAttachments[0].texture = target;
+		descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+		descriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
+		descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.5, 0.5, 1);
 
-	id<MTLRenderCommandEncoder> encoder =
-	        [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
+		id<MTLRenderCommandEncoder> encoder =
+		        [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
 
-	[self drawBoxesWithEncoder:encoder
-	                    target:target
-	                 positions:self.boxPositions
-	                     sizes:self.boxSizes
-	                    colors:self.boxColors
-	                     count:self.boxCount];
+		[self drawBoxesWithEncoder:encoder
+		               blurTexture:self.offscreenTexture1
+		                 positions:self.boxPositions
+		                     sizes:self.boxSizes
+		                    colors:self.boxColors
+		                     count:self.boxCount];
+
+		[encoder endEncoding];
+	}
 
 	{
 		simd_float2 positions[] = {
@@ -216,20 +216,30 @@ RngNextFloat(Rng *rng)
 		};
 		float blurRadii[] = {self.blurRadius, self.blurRadius, self.blurRadius};
 
-		[encoder endEncoding];
-		encoder = [self blurWithCommandBuffer:commandBuffer
-		                               target:target
-		                            positions:positions
-		                                sizes:sizes
-		                            blurRadii:blurRadii
-		                                count:3];
+		id<MTLTexture> blurTexture = [self blurWithCommandBuffer:commandBuffer
+		                                                  target:target
+		                                               positions:positions
+		                                                   sizes:sizes
+		                                               blurRadii:blurRadii
+		                                                   count:3];
+
+		MTLRenderPassDescriptor *descriptor =
+		        [MTLRenderPassDescriptor renderPassDescriptor];
+		descriptor.colorAttachments[0].texture = target;
+		descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+		descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
+
+		id<MTLRenderCommandEncoder> encoder =
+		        [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
 
 		[self drawBoxesWithEncoder:encoder
-		                    target:target
+		               blurTexture:blurTexture
 		                 positions:positions
 		                     sizes:sizes
 		                    colors:colors
 		                     count:3];
+
+		[encoder endEncoding];
 	}
 
 	{
@@ -246,29 +256,37 @@ RngNextFloat(Rng *rng)
 		        self.blurRadius,
 		};
 
-		[encoder endEncoding];
-		encoder = [self blurWithCommandBuffer:commandBuffer
-		                               target:target
-		                            positions:positions
-		                                sizes:sizes
-		                            blurRadii:blurRadii
-		                                count:1];
+		id<MTLTexture> blurTexture = [self blurWithCommandBuffer:commandBuffer
+		                                                  target:target
+		                                               positions:positions
+		                                                   sizes:sizes
+		                                               blurRadii:blurRadii
+		                                                   count:1];
+
+		MTLRenderPassDescriptor *descriptor =
+		        [MTLRenderPassDescriptor renderPassDescriptor];
+		descriptor.colorAttachments[0].texture = target;
+		descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+		descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
+
+		id<MTLRenderCommandEncoder> encoder =
+		        [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
 
 		[self drawBoxesWithEncoder:encoder
-		                    target:target
+		               blurTexture:blurTexture
 		                 positions:positions
 		                     sizes:sizes
 		                    colors:colors
 		                     count:1];
-	}
 
-	[encoder endEncoding];
+		[encoder endEncoding];
+	}
 
 	return commandBuffer;
 }
 
 - (void)drawBoxesWithEncoder:(id<MTLRenderCommandEncoder>)encoder
-                      target:(id<MTLTexture>)target
+                 blurTexture:(id<MTLTexture>)blurTexture
                    positions:(simd_float2 *)positions
                        sizes:(simd_float2 *)sizes
                       colors:(simd_float4 *)colors
@@ -283,6 +301,7 @@ RngNextFloat(Rng *rng)
 	[encoder setVertexBytes:positions length:sizeof(simd_float2) * count atIndex:2];
 	[encoder setVertexBytes:sizes length:sizeof(simd_float2) * count atIndex:3];
 	[encoder setVertexBytes:colors length:sizeof(simd_float4) * count atIndex:4];
+	[encoder setFragmentTexture:blurTexture atIndex:0];
 
 	[encoder drawPrimitives:MTLPrimitiveTypeTriangle
 	            vertexStart:0
@@ -290,12 +309,12 @@ RngNextFloat(Rng *rng)
 	          instanceCount:count];
 }
 
-- (id<MTLRenderCommandEncoder>)blurWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
-                                              target:(id<MTLTexture>)target
-                                           positions:(simd_float2 *)positions
-                                               sizes:(simd_float2 *)sizes
-                                           blurRadii:(float *)blurRadii
-                                               count:(uint64_t)count
+- (id<MTLTexture>)blurWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
+                                 target:(id<MTLTexture>)target
+                              positions:(simd_float2 *)positions
+                                  sizes:(simd_float2 *)sizes
+                              blurRadii:(float *)blurRadii
+                                  count:(uint64_t)count
 {
 	float outputScaleFactor = 0;
 
@@ -306,11 +325,6 @@ RngNextFloat(Rng *rng)
 		case BlurImplementation_SampleEveryPixelCompute:
 		{
 			outputScaleFactor = 1;
-			MTLBlitPassDescriptor *descriptor = [[MTLBlitPassDescriptor alloc] init];
-			id<MTLBlitCommandEncoder> encoder =
-			        [commandBuffer blitCommandEncoderWithDescriptor:descriptor];
-			[encoder copyFromTexture:target toTexture:self.offscreenTexture];
-			[encoder endEncoding];
 		}
 		break;
 
@@ -337,12 +351,11 @@ RngNextFloat(Rng *rng)
 	simd_float2 resolution = self.size * self.scaleFactor;
 
 	id<MTLRenderCommandEncoder> encoder = nil;
+	id<MTLTexture> sourceTexture = nil;
+	id<MTLTexture> destinationTexture = nil;
 
 	for (uint32_t horizontal = 0; horizontal <= 1; horizontal++)
 	{
-		id<MTLTexture> sourceTexture = nil;
-		id<MTLTexture> destinationTexture = nil;
-
 		switch (self.blurImplementation)
 		{
 			case BlurImplementation_SampleEveryPixel:
@@ -350,12 +363,12 @@ RngNextFloat(Rng *rng)
 			case BlurImplementation_SampleEveryPixelCompute:
 				if (horizontal)
 				{
-					destinationTexture = target;
-					sourceTexture = self.offscreenTexture;
+					destinationTexture = self.offscreenTexture1;
+					sourceTexture = self.offscreenTexture2;
 				}
 				else
 				{
-					destinationTexture = self.offscreenTexture;
+					destinationTexture = self.offscreenTexture2;
 					sourceTexture = target;
 				}
 				break;
@@ -443,7 +456,7 @@ RngNextFloat(Rng *rng)
 		        [MTLRenderPassDescriptor renderPassDescriptor];
 		descriptor.colorAttachments[0].texture = destinationTexture;
 		descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
-		descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
+		descriptor.colorAttachments[0].loadAction = MTLLoadActionDontCare;
 
 		encoder = [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
 
@@ -491,49 +504,10 @@ RngNextFloat(Rng *rng)
 		            vertexCount:6
 		          instanceCount:count];
 
-		if (!horizontal)
-		{
-			[encoder endEncoding];
-		}
+		[encoder endEncoding];
 	}
 
-	switch (self.blurImplementation)
-	{
-		case BlurImplementation_SampleEveryPixelQuarterRes:
-		case BlurImplementation_SamplePixelQuadsQuarterRes:
-		{
-			[encoder endEncoding];
-			[self.upscaleKernel encodeToCommandBuffer:commandBuffer
-			                            sourceTexture:self.offscreenTextureQuarterRes1
-			                       destinationTexture:target];
-
-			MTLRenderPassDescriptor *descriptor =
-			        [MTLRenderPassDescriptor renderPassDescriptor];
-			descriptor.colorAttachments[0].texture = target;
-			descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
-			descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
-			encoder = [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
-		}
-		break;
-
-		case BlurImplementation_SampleEveryPixel:
-		case BlurImplementation_SamplePixelQuads: break;
-
-		case BlurImplementation_SampleEveryPixelCompute:
-		{
-			MTLRenderPassDescriptor *descriptor =
-			        [MTLRenderPassDescriptor renderPassDescriptor];
-			descriptor.colorAttachments[0].texture = target;
-			descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
-			descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
-			encoder = [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
-		}
-		break;
-
-		case BlurImplementation__Count: break;
-	}
-
-	return encoder;
+	return destinationTexture;
 }
 
 - (void)setSize:(simd_float2)size scaleFactor:(float)scaleFactor
@@ -549,8 +523,10 @@ RngNextFloat(Rng *rng)
 	                   MTLTextureUsageShaderWrite;
 	descriptor.storageMode = MTLStorageModePrivate;
 
-	self.offscreenTexture = [self.device newTextureWithDescriptor:descriptor];
-	self.offscreenTexture.label = @"Offscreen Texture";
+	self.offscreenTexture1 = [self.device newTextureWithDescriptor:descriptor];
+	self.offscreenTexture2 = [self.device newTextureWithDescriptor:descriptor];
+	self.offscreenTexture1.label = @"Offscreen Texture 1";
+	self.offscreenTexture2.label = @"Offscreen Texture 2";
 
 	descriptor.width /= 2;
 	descriptor.height /= 2;
