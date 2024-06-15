@@ -408,35 +408,30 @@ RngNextFloat(Rng *rng)
 				[computeEncoder setBytes:&resolution
 				                  length:sizeof(resolution)
 				                 atIndex:1];
-				[computeEncoder setBytes:&_scaleFactor
-				                  length:sizeof(_scaleFactor)
-				                 atIndex:2];
 
 				[computeEncoder setTexture:destinationTexture atIndex:0];
 				[computeEncoder setTexture:sourceTexture atIndex:1];
 
 				for (uint64_t i = 0; i < count; i++)
 				{
-					simd_float2 position = positions[i];
-					simd_float2 size = sizes[i];
-					float blurRadius = blurRadii[i];
+					simd_float2 position = positions[i] * self.scaleFactor;
+					simd_float2 size = sizes[i] * self.scaleFactor;
+					float blurRadius = blurRadii[i] * self.scaleFactor;
 
 					[computeEncoder setBytes:&position
 					                  length:sizeof(position)
-					                 atIndex:3];
+					                 atIndex:2];
 					[computeEncoder setBytes:&size
 					                  length:sizeof(size)
-					                 atIndex:4];
+					                 atIndex:3];
 					[computeEncoder setBytes:&blurRadius
 					                  length:sizeof(blurRadius)
-					                 atIndex:5];
+					                 atIndex:4];
 
-					simd_float2 dispatchSize = ceil(size * self.scaleFactor);
 					[computeEncoder
-					              dispatchThreads:
-					                      MTLSizeMake(
-					                              (NSUInteger)dispatchSize.x,
-					                              (NSUInteger)dispatchSize.y, 1)
+					              dispatchThreads:MTLSizeMake(
+					                                      (NSUInteger)size.x,
+					                                      (NSUInteger)size.y, 1)
 					        threadsPerThreadgroup:MTLSizeMake(32, 32, 1)];
 				}
 
