@@ -88,6 +88,12 @@ BlurVertexFunction(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]
 	return output;
 }
 
+float
+Gaussian(float sigma, float x)
+{
+	return metal::exp(-(x * x) / (2 * sigma * sigma));
+}
+
 float4
 Blur(BlurRasterizerData input, float2 resolution, float blur_radius, uint horizontal,
         metal::texture2d<float> behind, float sample_offset_step, float sample_offset_nudge)
@@ -132,8 +138,7 @@ Blur(BlurRasterizerData input, float2 resolution, float blur_radius, uint horizo
 		float2 sample_position =
 		        input.position.xy + (sample_offset + sample_offset_nudge) * axis;
 		float4 sample = behind.sample(sampler, sample_position / resolution);
-		float weight =
-		        metal::exp(-(float)(sample_offset * sample_offset) / (2 * sigma * sigma));
+		float weight = Gaussian(sigma, sample_offset);
 
 		result += sample * weight;
 		total_weight += weight;
