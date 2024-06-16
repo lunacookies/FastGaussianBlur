@@ -365,12 +365,6 @@ RngNextFloat(Rng *rng)
 		[self.downscaleKernel encodeToCommandBuffer:commandBuffer
 		                              sourceTexture:target
 		                         destinationTexture:self.offscreenTextureQuarterRes1];
-		MTLBlitPassDescriptor *descriptor = [[MTLBlitPassDescriptor alloc] init];
-		id<MTLBlitCommandEncoder> encoder =
-		        [commandBuffer blitCommandEncoderWithDescriptor:descriptor];
-		[encoder copyFromTexture:self.offscreenTextureQuarterRes1
-		               toTexture:self.offscreenTextureQuarterRes2];
-		[encoder endEncoding];
 	}
 	else
 	{
