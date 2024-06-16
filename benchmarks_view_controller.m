@@ -194,8 +194,8 @@ static void
 RunBenchmark(NSProgress *progress, NSTableViewDiffableDataSource *dataSource)
 {
 	float scaleFactor = 2;
-	uint64_t width = 5120;
-	uint64_t height = 2880;
+	uint64_t width = 1600;
+	uint64_t height = 900;
 	simd_float2 size = {(float)width / scaleFactor, (float)height / scaleFactor};
 
 	MTLPixelFormat pixelFormat = MTLPixelFormatBGRA8Unorm;
