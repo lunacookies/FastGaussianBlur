@@ -184,3 +184,85 @@ SampleEveryPixel(uint2 thread_position_int [[thread_position_in_grid]], constant
 	float4 output = Blur(data, resolution, blur_radius, horizontal, source, 1, 0);
 	destination.write(output, thread_position_int);
 }
+
+kernel void
+SampleEveryPixelLineCache(ushort2 threadgroup_position_in_grid [[threadgroup_position_in_grid]],
+        ushort thread_index_in_threadgroup [[thread_index_in_threadgroup]],
+        ushort2 threads_per_threadgroup [[threads_per_threadgroup]],
+        ushort2 dispatch_threads_per_threadgroup [[dispatch_threads_per_threadgroup]],
+        constant uint &horizontal, constant float2 &resolution, constant ushort2 &p0,
+        constant ushort2 &p1, constant float &blur_radius, threadgroup float4 *read_cache,
+        metal::texture2d<float, metal::access::write> destination, metal::texture2d<float> source)
+{
+	ushort blur_radius_int = (ushort)metal::ceil(blur_radius);
+
+	ushort2 axis = 0;
+	ushort threadgroup_length = 0;
+	ushort2 dispatch_threadgroup_output_size = dispatch_threads_per_threadgroup;
+	if (horizontal)
+	{
+		axis = ushort2(1, 0);
+		threadgroup_length = threads_per_threadgroup.x;
+		dispatch_threadgroup_output_size.x -= 2 * blur_radius_int;
+	}
+	else
+	{
+		axis = ushort2(0, 1);
+		threadgroup_length = threads_per_threadgroup.y;
+		dispatch_threadgroup_output_size.y -= 2 * blur_radius_int;
+	}
+
+	ushort2 position_in_image =
+	        p0 + threadgroup_position_in_grid * dispatch_threadgroup_output_size +
+	        axis * thread_index_in_threadgroup - axis * blur_radius_int;
+
+	metal::sampler sampler(metal::filter::linear, metal::address::mirrored_repeat);
+	float4 source_sample =
+	        source.sample(sampler, ((float2)position_in_image + 0.5) / resolution);
+	read_cache[thread_index_in_threadgroup] = source_sample;
+
+	metal::threadgroup_barrier(metal::mem_flags::mem_threadgroup);
+
+	if (thread_index_in_threadgroup < blur_radius_int ||
+	        thread_index_in_threadgroup >= threadgroup_length - blur_radius_int)
+	{
+		return;
+	}
+
+	float sigma = blur_radius * 0.2;
+	short kernel_radius = (short)blur_radius;
+
+	float4 result = 0;
+	float total_weight = 0;
+
+	short sample_offset_start = -kernel_radius;
+	short sample_offset_end = kernel_radius;
+
+	if (horizontal)
+	{
+		sample_offset_start =
+		        metal::max(sample_offset_start, (short)(p0.x - position_in_image.x));
+		sample_offset_end =
+		        metal::min(sample_offset_end, (short)(p1.x - position_in_image.x));
+	}
+	else
+	{
+		sample_offset_start =
+		        metal::max(sample_offset_start, (short)(p0.y - position_in_image.y));
+		sample_offset_end =
+		        metal::min(sample_offset_end, (short)(p1.y - position_in_image.y));
+	}
+
+	for (short sample_offset = sample_offset_start; sample_offset <= sample_offset_end;
+	        sample_offset++)
+	{
+		float4 sample = read_cache[thread_index_in_threadgroup + sample_offset];
+		float weight = Gaussian(sigma, sample_offset);
+
+		result += sample * weight;
+		total_weight += weight;
+	}
+
+	result /= total_weight;
+	destination.write(result, position_in_image);
+}

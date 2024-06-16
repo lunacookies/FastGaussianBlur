@@ -5,6 +5,7 @@ typedef enum
 	BlurImplementation_SampleEveryPixelQuarterRes,
 	BlurImplementation_SamplePixelQuadsQuarterRes,
 	BlurImplementation_SampleEveryPixelCompute,
+	BlurImplementation_SampleEveryPixelLineCache,
 	BlurImplementation__Count,
 } BlurImplementation;
 
@@ -14,6 +15,7 @@ static NSString *BlurImplementationNames[] = {
         @"Sample Every Pixel (¼ Res)",
         @"Sample Pixel Quads (¼ Res)",
         @"Sample Every Pixel Compute",
+        @"Sample Every Pixel Line Cache",
 };
 
 @interface Renderer : NSObject
@@ -33,6 +35,7 @@ static NSString *BlurImplementationNames[] = {
 @property id<MTLRenderPipelineState> pipelineStateBlurSampleEveryPixel;
 @property id<MTLRenderPipelineState> pipelineStateBlurSamplePixelQuads;
 @property id<MTLComputePipelineState> pipelineStateBlurSampleEveryPixelCompute;
+@property id<MTLComputePipelineState> pipelineStateBlurSampleEveryPixelLineCache;
 
 @property MPSImageBilinearScale *downscaleKernel;
 
@@ -129,6 +132,13 @@ RngNextFloat(Rng *rng)
 		        [self.device newComputePipelineStateWithFunction:
 		                             [library newFunctionWithName:@"SampleEveryPixel"]
 		                                                   error:nil];
+	}
+
+	{
+		self.pipelineStateBlurSampleEveryPixelLineCache = [self.device
+		        newComputePipelineStateWithFunction:
+		                [library newFunctionWithName:@"SampleEveryPixelLineCache"]
+		                                      error:nil];
 	}
 
 	self.downscaleKernel = [[MPSImageBilinearScale alloc] initWithDevice:self.device];
@@ -323,6 +333,7 @@ RngNextFloat(Rng *rng)
 		case BlurImplementation_SampleEveryPixel:
 		case BlurImplementation_SamplePixelQuads:
 		case BlurImplementation_SampleEveryPixelCompute:
+		case BlurImplementation_SampleEveryPixelLineCache:
 		{
 			outputScaleFactor = 1;
 		}
@@ -361,6 +372,7 @@ RngNextFloat(Rng *rng)
 			case BlurImplementation_SampleEveryPixel:
 			case BlurImplementation_SamplePixelQuads:
 			case BlurImplementation_SampleEveryPixelCompute:
+			case BlurImplementation_SampleEveryPixelLineCache:
 				if (horizontal)
 				{
 					destinationTexture = self.offscreenTexture1;
@@ -440,6 +452,129 @@ RngNextFloat(Rng *rng)
 				continue;
 			}
 
+			case BlurImplementation_SampleEveryPixelLineCache:
+			{
+				id<MTLComputeCommandEncoder> computeEncoder =
+				        [commandBuffer computeCommandEncoderWithDispatchType:
+				                               MTLDispatchTypeSerial];
+
+				uint16_t threadgroupLength =
+				        (uint16_t)self.pipelineStateBlurSampleEveryPixelLineCache
+				                .maxTotalThreadsPerThreadgroup;
+				MTLSize threadgroupSize = {0};
+
+				[computeEncoder
+				        setComputePipelineState:
+				                self.pipelineStateBlurSampleEveryPixelLineCache];
+
+				[computeEncoder setThreadgroupMemoryLength:sizeof(simd_float4) *
+				                                           threadgroupLength
+				                                   atIndex:0];
+
+				if (horizontal)
+				{
+					threadgroupSize = MTLSizeMake(threadgroupLength, 1, 1);
+				}
+				else
+				{
+					threadgroupSize = MTLSizeMake(1, threadgroupLength, 1);
+				}
+
+				[computeEncoder setBytes:&horizontal
+				                  length:sizeof(horizontal)
+				                 atIndex:0];
+				[computeEncoder setBytes:&resolution
+				                  length:sizeof(resolution)
+				                 atIndex:1];
+
+				[computeEncoder setTexture:destinationTexture atIndex:0];
+				[computeEncoder setTexture:sourceTexture atIndex:1];
+
+				for (uint64_t i = 0; i < count; i++)
+				{
+					simd_float2 positionUnrounded =
+					        positions[i] * self.scaleFactor;
+					simd_float2 sizeUnrounded = sizes[i] * self.scaleFactor;
+
+					simd_float2 p0Unrounded = positionUnrounded;
+					simd_float2 p1Unrounded = positionUnrounded + sizeUnrounded;
+
+					simd_ushort2 p0 = 0;
+					p0.x = (uint16_t)floorf(p0Unrounded.x);
+					p0.y = (uint16_t)floorf(p0Unrounded.y);
+
+					simd_ushort2 p1 = 0;
+					p1.x = (uint16_t)ceilf(p1Unrounded.x);
+					p1.y = (uint16_t)ceilf(p1Unrounded.y);
+
+					simd_ushort2 size = p1 - p0;
+
+					float blurRadius = blurRadii[i] * self.scaleFactor;
+
+					// To avoid a performance cliff at high blur radii, make
+					// sure there’s at least eight output-generating threads in
+					// each threadgroup. At sufficiently-large threadgroup sizes
+					// this should never happen.
+					blurRadius = fmin(
+					        blurRadius, (float)threadgroupLength * 0.5f - 8);
+
+					[computeEncoder setBytes:&p0 length:sizeof(p0) atIndex:2];
+					[computeEncoder setBytes:&p1 length:sizeof(p1) atIndex:3];
+					[computeEncoder setBytes:&blurRadius
+					                  length:sizeof(blurRadius)
+					                 atIndex:4];
+
+					uint16_t sizeAlongCurrentDimension = 0;
+					if (horizontal)
+					{
+						sizeAlongCurrentDimension = size.x;
+					}
+					else
+					{
+						sizeAlongCurrentDimension = size.y;
+					}
+
+					uint16_t blurRadiusInt = (uint16_t)ceilf(blurRadius);
+
+					uint16_t threadgroupOutputSize =
+					        threadgroupLength - 2 * blurRadiusInt;
+
+					uint16_t fullThreadgroupCount =
+					        sizeAlongCurrentDimension / threadgroupOutputSize;
+					uint16_t fullThreadgroupThreadCount =
+					        fullThreadgroupCount * threadgroupLength;
+
+					uint16_t partialThreadgroupOutputSize =
+					        sizeAlongCurrentDimension % threadgroupOutputSize;
+
+					uint16_t partialThreadgroupThreadCount =
+					        partialThreadgroupOutputSize + 2 * blurRadiusInt;
+
+					uint16_t threadCount = fullThreadgroupThreadCount +
+					                       partialThreadgroupThreadCount;
+
+					MTLSize gridSize = {0};
+					gridSize.depth = 1;
+					if (horizontal)
+					{
+						gridSize.width = threadCount;
+						gridSize.height = size.y;
+					}
+					else
+					{
+						gridSize.width = size.x;
+						gridSize.height = threadCount;
+					}
+
+					[computeEncoder dispatchThreads:gridSize
+					          threadsPerThreadgroup:threadgroupSize];
+				}
+
+				[computeEncoder endEncoding];
+
+				continue;
+			}
+
 			case BlurImplementation_SampleEveryPixel:
 			case BlurImplementation_SamplePixelQuads:
 			case BlurImplementation_SampleEveryPixelQuarterRes:
@@ -470,6 +605,7 @@ RngNextFloat(Rng *rng)
 				break;
 
 			case BlurImplementation_SampleEveryPixelCompute:
+			case BlurImplementation_SampleEveryPixelLineCache:
 			case BlurImplementation__Count: break;
 		}
 
