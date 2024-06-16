@@ -376,7 +376,6 @@ RngNextFloat(Rng *rng)
 	simd_float2 downscaledResolution = resolution * outputScaleFactor;
 	float downscaledScaleFactor = self.scaleFactor * outputScaleFactor;
 
-	id<MTLRenderCommandEncoder> encoder = nil;
 	id<MTLTexture> sourceTexture = nil;
 	id<MTLTexture> destinationTexture = nil;
 
@@ -421,7 +420,7 @@ RngNextFloat(Rng *rng)
 				descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
 				descriptor.colorAttachments[0].loadAction = MTLLoadActionDontCare;
 
-				encoder = [commandBuffer
+				id<MTLRenderCommandEncoder> encoder = [commandBuffer
 				        renderCommandEncoderWithDescriptor:descriptor];
 
 				if (self.blurImplementation &
@@ -479,33 +478,30 @@ RngNextFloat(Rng *rng)
 
 			case BlurImplementationAlgo_Compute:
 			{
-				id<MTLComputeCommandEncoder> computeEncoder =
+				id<MTLComputeCommandEncoder> encoder =
 				        [commandBuffer computeCommandEncoderWithDispatchType:
 				                               MTLDispatchTypeConcurrent];
 
 				if (self.blurImplementation &
 				        BlurImplementationFlag_TextureFiltering)
 				{
-					[computeEncoder
-					        setComputePipelineState:
-					                self.pipelineStateComputeTextureFiltering];
+					[encoder setComputePipelineState:
+					                 self.pipelineStateComputeTextureFiltering];
 				}
 				else
 				{
-					[computeEncoder
+					[encoder
 					        setComputePipelineState:
 					                self.pipelineStateComputeNoTextureFiltering];
 				}
 
-				[computeEncoder setBytes:&horizontal
-				                  length:sizeof(horizontal)
-				                 atIndex:0];
-				[computeEncoder setBytes:&downscaledResolution
-				                  length:sizeof(downscaledResolution)
-				                 atIndex:1];
+				[encoder setBytes:&horizontal length:sizeof(horizontal) atIndex:0];
+				[encoder setBytes:&downscaledResolution
+				           length:sizeof(downscaledResolution)
+				          atIndex:1];
 
-				[computeEncoder setTexture:destinationTexture atIndex:0];
-				[computeEncoder setTexture:sourceTexture atIndex:1];
+				[encoder setTexture:destinationTexture atIndex:0];
+				[encoder setTexture:sourceTexture atIndex:1];
 
 				for (uint64_t i = 0; i < count; i++)
 				{
@@ -513,30 +509,28 @@ RngNextFloat(Rng *rng)
 					simd_float2 size = sizes[i] * downscaledScaleFactor;
 					float blurRadius = blurRadii[i] * downscaledScaleFactor;
 
-					[computeEncoder setBytes:&position
-					                  length:sizeof(position)
-					                 atIndex:2];
-					[computeEncoder setBytes:&size
-					                  length:sizeof(size)
-					                 atIndex:3];
-					[computeEncoder setBytes:&blurRadius
-					                  length:sizeof(blurRadius)
-					                 atIndex:4];
+					[encoder setBytes:&position
+					           length:sizeof(position)
+					          atIndex:2];
+					[encoder setBytes:&size length:sizeof(size) atIndex:3];
+					[encoder setBytes:&blurRadius
+					           length:sizeof(blurRadius)
+					          atIndex:4];
 
 					MTLSize gridSize = MTLSizeMake((NSUInteger)ceilf(size.x),
 					        (NSUInteger)ceilf(size.y), 1);
 
-					[computeEncoder dispatchThreads:gridSize
-					          threadsPerThreadgroup:MTLSizeMake(32, 32, 1)];
+					[encoder dispatchThreads:gridSize
+					        threadsPerThreadgroup:MTLSizeMake(32, 32, 1)];
 				}
 
-				[computeEncoder endEncoding];
+				[encoder endEncoding];
 			}
 			break;
 
 			case BlurImplementationAlgo_LineCache:
 			{
-				id<MTLComputeCommandEncoder> computeEncoder =
+				id<MTLComputeCommandEncoder> encoder =
 				        [commandBuffer computeCommandEncoderWithDispatchType:
 				                               MTLDispatchTypeSerial];
 
@@ -544,12 +538,11 @@ RngNextFloat(Rng *rng)
 				                                     .maxTotalThreadsPerThreadgroup;
 				MTLSize threadgroupSize = {0};
 
-				[computeEncoder
-				        setComputePipelineState:self.pipelineStateLineCache];
+				[encoder setComputePipelineState:self.pipelineStateLineCache];
 
-				[computeEncoder setThreadgroupMemoryLength:sizeof(simd_float4) *
-				                                           threadgroupLength
-				                                   atIndex:0];
+				[encoder setThreadgroupMemoryLength:sizeof(simd_float4) *
+				                                    threadgroupLength
+				                            atIndex:0];
 
 				if (horizontal)
 				{
@@ -560,15 +553,13 @@ RngNextFloat(Rng *rng)
 					threadgroupSize = MTLSizeMake(1, threadgroupLength, 1);
 				}
 
-				[computeEncoder setBytes:&horizontal
-				                  length:sizeof(horizontal)
-				                 atIndex:0];
-				[computeEncoder setBytes:&downscaledResolution
-				                  length:sizeof(downscaledResolution)
-				                 atIndex:1];
+				[encoder setBytes:&horizontal length:sizeof(horizontal) atIndex:0];
+				[encoder setBytes:&downscaledResolution
+				           length:sizeof(downscaledResolution)
+				          atIndex:1];
 
-				[computeEncoder setTexture:destinationTexture atIndex:0];
-				[computeEncoder setTexture:sourceTexture atIndex:1];
+				[encoder setTexture:destinationTexture atIndex:0];
+				[encoder setTexture:sourceTexture atIndex:1];
 
 				for (uint64_t i = 0; i < count; i++)
 				{
@@ -599,11 +590,11 @@ RngNextFloat(Rng *rng)
 					blurRadius = fmin(
 					        blurRadius, (float)threadgroupLength * 0.5f - 8);
 
-					[computeEncoder setBytes:&p0 length:sizeof(p0) atIndex:2];
-					[computeEncoder setBytes:&p1 length:sizeof(p1) atIndex:3];
-					[computeEncoder setBytes:&blurRadius
-					                  length:sizeof(blurRadius)
-					                 atIndex:4];
+					[encoder setBytes:&p0 length:sizeof(p0) atIndex:2];
+					[encoder setBytes:&p1 length:sizeof(p1) atIndex:3];
+					[encoder setBytes:&blurRadius
+					           length:sizeof(blurRadius)
+					          atIndex:4];
 
 					uint16_t sizeAlongCurrentDimension = 0;
 					if (horizontal)
@@ -647,11 +638,11 @@ RngNextFloat(Rng *rng)
 						gridSize.height = threadCount;
 					}
 
-					[computeEncoder dispatchThreads:gridSize
-					          threadsPerThreadgroup:threadgroupSize];
+					[encoder dispatchThreads:gridSize
+					        threadsPerThreadgroup:threadgroupSize];
 				}
 
-				[computeEncoder endEncoding];
+				[encoder endEncoding];
 			}
 			break;
 		}
