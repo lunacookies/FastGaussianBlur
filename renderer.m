@@ -532,7 +532,7 @@ RngNextFloat(Rng *rng)
 			{
 				id<MTLComputeCommandEncoder> encoder =
 				        [commandBuffer computeCommandEncoderWithDispatchType:
-				                               MTLDispatchTypeSerial];
+				                               MTLDispatchTypeConcurrent];
 
 				uint16_t threadgroupLength = (uint16_t)self.pipelineStateLineCache
 				                                     .maxTotalThreadsPerThreadgroup;
