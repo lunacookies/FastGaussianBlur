@@ -33,9 +33,9 @@ struct RasterizerData
 };
 
 vertex RasterizerData
-VertexFunction(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]],
-        constant float2 &resolution, constant float &scale_factor, const device float2 *positions,
-        const device float2 *sizes, const device float4 *colors)
+Vertex(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]], constant float2 &resolution,
+        constant float &scale_factor, const device float2 *positions, const device float2 *sizes,
+        const device float4 *colors)
 {
 	float2 position = positions[instance_id] * scale_factor;
 	float2 size = sizes[instance_id] * scale_factor;
@@ -50,7 +50,7 @@ VertexFunction(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]],
 }
 
 fragment float4
-FragmentFunction(RasterizerData input [[stage_in]], metal::texture2d<float> blur_texture)
+Fragment(RasterizerData input [[stage_in]], metal::texture2d<float> blur_texture)
 {
 	metal::sampler sampler(metal::filter::linear);
 	float4 blurred_color = blur_texture.sample(sampler, input.position_uv);
@@ -71,7 +71,7 @@ struct BlurRasterizerData
 };
 
 vertex BlurRasterizerData
-BlurVertexFunction(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]],
+BlurVertex(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]],
         constant float2 &resolution, constant float &scale_factor,
         constant float &output_scale_factor, const device float2 *positions,
         const device float2 *sizes)
@@ -150,28 +150,28 @@ Blur(BlurRasterizerData input, float2 resolution, float blur_radius, uint horizo
 }
 
 fragment float4
-BlurFragmentFunctionSampleEveryPixel(BlurRasterizerData input [[stage_in]],
-        constant float2 &resolution, constant float &scale_factor, constant uint &horizontal,
-        const device float *blur_radii, metal::texture2d<float> behind)
+BlurFragmentNoTextureFiltering(BlurRasterizerData input [[stage_in]], constant float2 &resolution,
+        constant float &scale_factor, constant uint &horizontal, const device float *blur_radii,
+        metal::texture2d<float> behind)
 {
 	float blur_radius = blur_radii[input.instance_id] * scale_factor;
 	return Blur(input, resolution, blur_radius, horizontal, behind, 1, 0);
 }
 
 fragment float4
-BlurFragmentFunctionSamplePixelQuads(BlurRasterizerData input [[stage_in]],
-        constant float2 &resolution, constant float &scale_factor, constant uint &horizontal,
-        const device float *blur_radii, metal::texture2d<float> behind)
+BlurFragmentTextureFiltering(BlurRasterizerData input [[stage_in]], constant float2 &resolution,
+        constant float &scale_factor, constant uint &horizontal, const device float *blur_radii,
+        metal::texture2d<float> behind)
 {
 	float blur_radius = blur_radii[input.instance_id] * scale_factor;
 	return Blur(input, resolution, blur_radius, horizontal, behind, 2, 0.5);
 }
 
 kernel void
-SampleEveryPixel(uint2 thread_position_int [[thread_position_in_grid]], constant uint &horizontal,
-        constant float2 &resolution, constant float2 &position, constant float2 &size,
-        constant float &blur_radius, metal::texture2d<float, metal::access::write> destination,
-        metal::texture2d<float> source)
+BlurComputeNoTextureFiltering(uint2 thread_position_int [[thread_position_in_grid]],
+        constant uint &horizontal, constant float2 &resolution, constant float2 &position,
+        constant float2 &size, constant float &blur_radius,
+        metal::texture2d<float, metal::access::write> destination, metal::texture2d<float> source)
 {
 	float2 thread_position = position + (float2)thread_position_int + 0.5;
 	thread_position_int += (uint2)position;
@@ -186,49 +186,39 @@ SampleEveryPixel(uint2 thread_position_int [[thread_position_in_grid]], constant
 }
 
 kernel void
-SampleEveryPixelLineCache(ushort2 threadgroup_position_in_grid [[threadgroup_position_in_grid]],
-        ushort thread_index_in_threadgroup [[thread_index_in_threadgroup]],
-        ushort2 threads_per_threadgroup [[threads_per_threadgroup]],
-        ushort2 dispatch_threads_per_threadgroup [[dispatch_threads_per_threadgroup]],
-        constant uint &horizontal, constant float2 &resolution, constant ushort2 &p0,
-        constant ushort2 &p1, constant float &blur_radius, threadgroup float4 *read_cache,
+BlurComputeTextureFiltering(uint2 thread_position_int [[thread_position_in_grid]],
+        constant uint &horizontal, constant float2 &resolution, constant float2 &position,
+        constant float2 &size, constant float &blur_radius,
         metal::texture2d<float, metal::access::write> destination, metal::texture2d<float> source)
 {
-	ushort blur_radius_int = (ushort)metal::ceil(blur_radius);
+	float2 thread_position = position + (float2)thread_position_int + 0.5;
+	thread_position_int += (uint2)position;
 
-	ushort2 axis = 0;
-	ushort threadgroup_length = 0;
-	ushort2 dispatch_threadgroup_output_size = dispatch_threads_per_threadgroup;
-	if (horizontal)
-	{
-		axis = ushort2(1, 0);
-		threadgroup_length = threads_per_threadgroup.x;
-		dispatch_threadgroup_output_size.x -= 2 * blur_radius_int;
-	}
-	else
-	{
-		axis = ushort2(0, 1);
-		threadgroup_length = threads_per_threadgroup.y;
-		dispatch_threadgroup_output_size.y -= 2 * blur_radius_int;
-	}
+	BlurRasterizerData data = {0};
+	data.position = float4(thread_position, 0, 1);
+	data.p0 = position;
+	data.p1 = position + size;
 
-	ushort2 position_in_image =
-	        p0 + threadgroup_position_in_grid * dispatch_threadgroup_output_size +
-	        axis * thread_index_in_threadgroup - axis * blur_radius_int;
+	float4 output = Blur(data, resolution, blur_radius, horizontal, source, 2, 0.5);
+	destination.write(output, thread_position_int);
+}
 
+void
+PopulateLineCache(ushort thread_index_in_threadgroup, threadgroup float4 *line_cache,
+        ushort2 position_in_image, float2 resolution, metal::texture2d<float> behind)
+{
 	metal::sampler sampler(metal::filter::linear, metal::address::mirrored_repeat);
-	float4 source_sample =
-	        source.sample(sampler, ((float2)position_in_image + 0.5) / resolution);
-	read_cache[thread_index_in_threadgroup] = source_sample;
+	float2 sample_position = ((float2)position_in_image + 0.5) / resolution;
+	float4 sample = behind.sample(sampler, sample_position);
+	line_cache[thread_index_in_threadgroup] = sample;
 
 	metal::threadgroup_barrier(metal::mem_flags::mem_threadgroup);
+}
 
-	if (thread_index_in_threadgroup < blur_radius_int ||
-	        thread_index_in_threadgroup >= threadgroup_length - blur_radius_int)
-	{
-		return;
-	}
-
+float4
+BlurAtImagePositionLineCache(ushort thread_index_in_threadgroup, threadgroup float4 *line_cache,
+        uint horizontal, ushort2 position_in_image, ushort2 p0, ushort2 p1, float blur_radius)
+{
 	float sigma = blur_radius * 0.2;
 	short kernel_radius = (short)blur_radius;
 
@@ -256,7 +246,7 @@ SampleEveryPixelLineCache(ushort2 threadgroup_position_in_grid [[threadgroup_pos
 	for (short sample_offset = sample_offset_start; sample_offset <= sample_offset_end;
 	        sample_offset++)
 	{
-		float4 sample = read_cache[thread_index_in_threadgroup + sample_offset];
+		float4 sample = line_cache[thread_index_in_threadgroup + sample_offset];
 		float weight = Gaussian(sigma, sample_offset);
 
 		result += sample * weight;
@@ -264,5 +254,50 @@ SampleEveryPixelLineCache(ushort2 threadgroup_position_in_grid [[threadgroup_pos
 	}
 
 	result /= total_weight;
+	return result;
+}
+
+kernel void
+BlurLineCache(ushort2 threadgroup_position_in_grid [[threadgroup_position_in_grid]],
+        ushort thread_index_in_threadgroup [[thread_index_in_threadgroup]],
+        ushort2 threads_per_threadgroup [[threads_per_threadgroup]],
+        ushort2 dispatch_threads_per_threadgroup [[dispatch_threads_per_threadgroup]],
+        constant uint &horizontal, constant float2 &resolution, constant ushort2 &p0,
+        constant ushort2 &p1, constant float &blur_radius, threadgroup float4 *line_cache,
+        metal::texture2d<float, metal::access::write> destination, metal::texture2d<float> source)
+{
+	ushort blur_radius_int = (ushort)metal::ceil(blur_radius);
+
+	ushort2 axis = 0;
+	ushort threadgroup_length = 0;
+	ushort2 dispatch_threadgroup_output_size = dispatch_threads_per_threadgroup;
+	if (horizontal)
+	{
+		axis = ushort2(1, 0);
+		threadgroup_length = threads_per_threadgroup.x;
+		dispatch_threadgroup_output_size.x -= 2 * blur_radius_int;
+	}
+	else
+	{
+		axis = ushort2(0, 1);
+		threadgroup_length = threads_per_threadgroup.y;
+		dispatch_threadgroup_output_size.y -= 2 * blur_radius_int;
+	}
+
+	ushort2 position_in_image =
+	        p0 + threadgroup_position_in_grid * dispatch_threadgroup_output_size +
+	        axis * thread_index_in_threadgroup - axis * blur_radius_int;
+
+	PopulateLineCache(
+	        thread_index_in_threadgroup, line_cache, position_in_image, resolution, source);
+
+	if (thread_index_in_threadgroup < blur_radius_int ||
+	        thread_index_in_threadgroup >= threadgroup_length - blur_radius_int)
+	{
+		return;
+	}
+
+	float4 result = BlurAtImagePositionLineCache(thread_index_in_threadgroup, line_cache,
+	        horizontal, position_in_image, p0, p1, blur_radius);
 	destination.write(result, position_in_image);
 }

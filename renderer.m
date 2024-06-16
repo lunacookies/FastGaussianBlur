@@ -1,22 +1,45 @@
-typedef enum
-{
-	BlurImplementation_SampleEveryPixel,
-	BlurImplementation_SamplePixelQuads,
-	BlurImplementation_SampleEveryPixelQuarterRes,
-	BlurImplementation_SamplePixelQuadsQuarterRes,
-	BlurImplementation_SampleEveryPixelCompute,
-	BlurImplementation_SampleEveryPixelLineCache,
-	BlurImplementation__Count,
-} BlurImplementation;
+typedef uint32_t BlurImplementation;
 
-static NSString *BlurImplementationNames[] = {
-        @"Sample Every Pixel",
-        @"Sample Pixel Quads",
-        @"Sample Every Pixel (¼ Res)",
-        @"Sample Pixel Quads (¼ Res)",
-        @"Sample Every Pixel Compute",
-        @"Sample Every Pixel Line Cache",
+typedef enum : BlurImplementation
+{
+	BlurImplementationAlgo_Fragment = 0b00 << 2,
+	BlurImplementationAlgo_Compute = 0b01 << 2,
+	BlurImplementationAlgo_LineCache = 0b10 << 2,
+} BlurImplementationAlgo;
+
+enum : BlurImplementation
+{
+	BlurImplementationFlag_TextureFiltering = 1 << 0,
+	BlurImplementationFlag_QuarterRes = 1 << 1,
+	BlurImplementation_AlgoMask = 0b11 << 2,
+	BlurImplementation__Count = 0b1011 + 1,
 };
+
+static NSString *
+StringFromBlurImplementation(BlurImplementation implementation)
+{
+	NSMutableString *result = [[NSMutableString alloc] init];
+
+	BlurImplementationAlgo algo = implementation & BlurImplementation_AlgoMask;
+	switch (algo)
+	{
+		case BlurImplementationAlgo_Fragment: [result appendString:@"Fragment"]; break;
+		case BlurImplementationAlgo_Compute: [result appendString:@"Compute"]; break;
+		case BlurImplementationAlgo_LineCache: [result appendString:@"Line Cache"]; break;
+	}
+
+	if (implementation & BlurImplementationFlag_TextureFiltering)
+	{
+		[result appendString:@" · Texture Filtering"];
+	}
+
+	if (implementation & BlurImplementationFlag_QuarterRes)
+	{
+		[result appendString:@" · ¼ Res"];
+	}
+
+	return result;
+}
 
 @interface Renderer : NSObject
 
@@ -32,10 +55,11 @@ static NSString *BlurImplementationNames[] = {
 @property id<MTLTexture> offscreenTextureQuarterRes2;
 
 @property id<MTLRenderPipelineState> pipelineState;
-@property id<MTLRenderPipelineState> pipelineStateBlurSampleEveryPixel;
-@property id<MTLRenderPipelineState> pipelineStateBlurSamplePixelQuads;
-@property id<MTLComputePipelineState> pipelineStateBlurSampleEveryPixelCompute;
-@property id<MTLComputePipelineState> pipelineStateBlurSampleEveryPixelLineCache;
+@property id<MTLRenderPipelineState> pipelineStateFragmentNoTextureFiltering;
+@property id<MTLRenderPipelineState> pipelineStateFragmentTextureFiltering;
+@property id<MTLComputePipelineState> pipelineStateComputeNoTextureFiltering;
+@property id<MTLComputePipelineState> pipelineStateComputeTextureFiltering;
+@property id<MTLComputePipelineState> pipelineStateLineCache;
 
 @property MPSImageBilinearScale *downscaleKernel;
 
@@ -99,8 +123,8 @@ RngNextFloat(Rng *rng)
 		        MTLBlendFactorOneMinusSourceAlpha;
 		descriptor.colorAttachments[0].destinationAlphaBlendFactor =
 		        MTLBlendFactorOneMinusSourceAlpha;
-		descriptor.vertexFunction = [library newFunctionWithName:@"VertexFunction"];
-		descriptor.fragmentFunction = [library newFunctionWithName:@"FragmentFunction"];
+		descriptor.vertexFunction = [library newFunctionWithName:@"Vertex"];
+		descriptor.fragmentFunction = [library newFunctionWithName:@"Fragment"];
 		self.pipelineState = [self.device newRenderPipelineStateWithDescriptor:descriptor
 		                                                                 error:nil];
 	}
@@ -109,10 +133,10 @@ RngNextFloat(Rng *rng)
 		MTLRenderPipelineDescriptor *descriptor =
 		        [[MTLRenderPipelineDescriptor alloc] init];
 		descriptor.colorAttachments[0].pixelFormat = self.pixelFormat;
-		descriptor.vertexFunction = [library newFunctionWithName:@"BlurVertexFunction"];
+		descriptor.vertexFunction = [library newFunctionWithName:@"BlurVertex"];
 		descriptor.fragmentFunction =
-		        [library newFunctionWithName:@"BlurFragmentFunctionSampleEveryPixel"];
-		self.pipelineStateBlurSampleEveryPixel =
+		        [library newFunctionWithName:@"BlurFragmentNoTextureFiltering"];
+		self.pipelineStateFragmentNoTextureFiltering =
 		        [self.device newRenderPipelineStateWithDescriptor:descriptor error:nil];
 	}
 
@@ -120,25 +144,32 @@ RngNextFloat(Rng *rng)
 		MTLRenderPipelineDescriptor *descriptor =
 		        [[MTLRenderPipelineDescriptor alloc] init];
 		descriptor.colorAttachments[0].pixelFormat = self.pixelFormat;
-		descriptor.vertexFunction = [library newFunctionWithName:@"BlurVertexFunction"];
+		descriptor.vertexFunction = [library newFunctionWithName:@"BlurVertex"];
 		descriptor.fragmentFunction =
-		        [library newFunctionWithName:@"BlurFragmentFunctionSamplePixelQuads"];
-		self.pipelineStateBlurSamplePixelQuads =
+		        [library newFunctionWithName:@"BlurFragmentTextureFiltering"];
+		self.pipelineStateFragmentTextureFiltering =
 		        [self.device newRenderPipelineStateWithDescriptor:descriptor error:nil];
 	}
 
 	{
-		self.pipelineStateBlurSampleEveryPixelCompute =
-		        [self.device newComputePipelineStateWithFunction:
-		                             [library newFunctionWithName:@"SampleEveryPixel"]
-		                                                   error:nil];
+		self.pipelineStateComputeNoTextureFiltering = [self.device
+		        newComputePipelineStateWithFunction:
+		                [library newFunctionWithName:@"BlurComputeNoTextureFiltering"]
+		                                      error:nil];
 	}
 
 	{
-		self.pipelineStateBlurSampleEveryPixelLineCache = [self.device
+		self.pipelineStateComputeTextureFiltering = [self.device
 		        newComputePipelineStateWithFunction:
-		                [library newFunctionWithName:@"SampleEveryPixelLineCache"]
+		                [library newFunctionWithName:@"BlurComputeTextureFiltering"]
 		                                      error:nil];
+	}
+
+	{
+		self.pipelineStateLineCache =
+		        [self.device newComputePipelineStateWithFunction:
+		                             [library newFunctionWithName:@"BlurLineCache"]
+		                                                   error:nil];
 	}
 
 	self.downscaleKernel = [[MPSImageBilinearScale alloc] initWithDevice:self.device];
@@ -328,38 +359,28 @@ RngNextFloat(Rng *rng)
 {
 	float outputScaleFactor = 0;
 
-	switch (self.blurImplementation)
+	if (self.blurImplementation & BlurImplementationFlag_QuarterRes)
 	{
-		case BlurImplementation_SampleEveryPixel:
-		case BlurImplementation_SamplePixelQuads:
-		case BlurImplementation_SampleEveryPixelCompute:
-		case BlurImplementation_SampleEveryPixelLineCache:
-		{
-			outputScaleFactor = 1;
-		}
-		break;
-
-		case BlurImplementation_SampleEveryPixelQuarterRes:
-		case BlurImplementation_SamplePixelQuadsQuarterRes:
-		{
-			outputScaleFactor = 0.5;
-			[self.downscaleKernel
-			        encodeToCommandBuffer:commandBuffer
-			                sourceTexture:target
-			           destinationTexture:self.offscreenTextureQuarterRes1];
-			MTLBlitPassDescriptor *descriptor = [[MTLBlitPassDescriptor alloc] init];
-			id<MTLBlitCommandEncoder> encoder =
-			        [commandBuffer blitCommandEncoderWithDescriptor:descriptor];
-			[encoder copyFromTexture:self.offscreenTextureQuarterRes1
-			               toTexture:self.offscreenTextureQuarterRes2];
-			[encoder endEncoding];
-		}
-		break;
-
-		case BlurImplementation__Count: break;
+		outputScaleFactor = 0.5;
+		[self.downscaleKernel encodeToCommandBuffer:commandBuffer
+		                              sourceTexture:target
+		                         destinationTexture:self.offscreenTextureQuarterRes1];
+		MTLBlitPassDescriptor *descriptor = [[MTLBlitPassDescriptor alloc] init];
+		id<MTLBlitCommandEncoder> encoder =
+		        [commandBuffer blitCommandEncoderWithDescriptor:descriptor];
+		[encoder copyFromTexture:self.offscreenTextureQuarterRes1
+		               toTexture:self.offscreenTextureQuarterRes2];
+		[encoder endEncoding];
+	}
+	else
+	{
+		outputScaleFactor = 1;
 	}
 
 	simd_float2 resolution = self.size * self.scaleFactor;
+
+	simd_float2 downscaledResolution = resolution * outputScaleFactor;
+	float downscaledScaleFactor = self.scaleFactor * outputScaleFactor;
 
 	id<MTLRenderCommandEncoder> encoder = nil;
 	id<MTLTexture> sourceTexture = nil;
@@ -367,58 +388,126 @@ RngNextFloat(Rng *rng)
 
 	for (uint32_t horizontal = 0; horizontal <= 1; horizontal++)
 	{
-		switch (self.blurImplementation)
+		if (self.blurImplementation & BlurImplementationFlag_QuarterRes)
 		{
-			case BlurImplementation_SampleEveryPixel:
-			case BlurImplementation_SamplePixelQuads:
-			case BlurImplementation_SampleEveryPixelCompute:
-			case BlurImplementation_SampleEveryPixelLineCache:
-				if (horizontal)
-				{
-					destinationTexture = self.offscreenTexture1;
-					sourceTexture = self.offscreenTexture2;
-				}
-				else
-				{
-					destinationTexture = self.offscreenTexture2;
-					sourceTexture = target;
-				}
-				break;
-
-			case BlurImplementation_SampleEveryPixelQuarterRes:
-			case BlurImplementation_SamplePixelQuadsQuarterRes:
-				if (horizontal)
-				{
-					destinationTexture = self.offscreenTextureQuarterRes1;
-					sourceTexture = self.offscreenTextureQuarterRes2;
-				}
-				else
-				{
-					destinationTexture = self.offscreenTextureQuarterRes2;
-					sourceTexture = self.offscreenTextureQuarterRes1;
-				}
-				break;
-
-			case BlurImplementation__Count: break;
+			if (horizontal)
+			{
+				destinationTexture = self.offscreenTextureQuarterRes1;
+				sourceTexture = self.offscreenTextureQuarterRes2;
+			}
+			else
+			{
+				destinationTexture = self.offscreenTextureQuarterRes2;
+				sourceTexture = self.offscreenTextureQuarterRes1;
+			}
+		}
+		else
+		{
+			if (horizontal)
+			{
+				destinationTexture = self.offscreenTexture1;
+				sourceTexture = self.offscreenTexture2;
+			}
+			else
+			{
+				destinationTexture = self.offscreenTexture2;
+				sourceTexture = target;
+			}
 		}
 
-		switch (self.blurImplementation)
+		BlurImplementationAlgo algo = self.blurImplementation & BlurImplementation_AlgoMask;
+
+		switch (algo)
 		{
-			case BlurImplementation_SampleEveryPixelCompute:
+			case BlurImplementationAlgo_Fragment:
+			{
+				MTLRenderPassDescriptor *descriptor =
+				        [MTLRenderPassDescriptor renderPassDescriptor];
+				descriptor.colorAttachments[0].texture = destinationTexture;
+				descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+				descriptor.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+
+				encoder = [commandBuffer
+				        renderCommandEncoderWithDescriptor:descriptor];
+
+				if (self.blurImplementation &
+				        BlurImplementationFlag_TextureFiltering)
+				{
+					[encoder
+					        setRenderPipelineState:
+					                self.pipelineStateFragmentTextureFiltering];
+				}
+				else
+				{
+					[encoder
+					        setRenderPipelineState:
+					                self.pipelineStateFragmentNoTextureFiltering];
+				}
+
+				[encoder setVertexBytes:&resolution
+				                 length:sizeof(resolution)
+				                atIndex:0];
+				[encoder setVertexBytes:&_scaleFactor
+				                 length:sizeof(_scaleFactor)
+				                atIndex:1];
+				[encoder setVertexBytes:&outputScaleFactor
+				                 length:sizeof(outputScaleFactor)
+				                atIndex:2];
+				[encoder setVertexBytes:positions
+				                 length:sizeof(simd_float2) * count
+				                atIndex:3];
+				[encoder setVertexBytes:sizes
+				                 length:sizeof(simd_float2) * count
+				                atIndex:4];
+
+				[encoder setFragmentBytes:&downscaledResolution
+				                   length:sizeof(downscaledResolution)
+				                  atIndex:0];
+				[encoder setFragmentBytes:&downscaledScaleFactor
+				                   length:sizeof(downscaledScaleFactor)
+				                  atIndex:1];
+				[encoder setFragmentBytes:&horizontal
+				                   length:sizeof(horizontal)
+				                  atIndex:2];
+				[encoder setFragmentBytes:blurRadii
+				                   length:sizeof(float) * count
+				                  atIndex:3];
+				[encoder setFragmentTexture:sourceTexture atIndex:0];
+
+				[encoder drawPrimitives:MTLPrimitiveTypeTriangle
+				            vertexStart:0
+				            vertexCount:6
+				          instanceCount:count];
+
+				[encoder endEncoding];
+			}
+			break;
+
+			case BlurImplementationAlgo_Compute:
 			{
 				id<MTLComputeCommandEncoder> computeEncoder =
 				        [commandBuffer computeCommandEncoderWithDispatchType:
 				                               MTLDispatchTypeConcurrent];
 
-				[computeEncoder
-				        setComputePipelineState:
-				                self.pipelineStateBlurSampleEveryPixelCompute];
+				if (self.blurImplementation &
+				        BlurImplementationFlag_TextureFiltering)
+				{
+					[computeEncoder
+					        setComputePipelineState:
+					                self.pipelineStateComputeTextureFiltering];
+				}
+				else
+				{
+					[computeEncoder
+					        setComputePipelineState:
+					                self.pipelineStateComputeNoTextureFiltering];
+				}
 
 				[computeEncoder setBytes:&horizontal
 				                  length:sizeof(horizontal)
 				                 atIndex:0];
-				[computeEncoder setBytes:&resolution
-				                  length:sizeof(resolution)
+				[computeEncoder setBytes:&downscaledResolution
+				                  length:sizeof(downscaledResolution)
 				                 atIndex:1];
 
 				[computeEncoder setTexture:destinationTexture atIndex:0];
@@ -426,9 +515,9 @@ RngNextFloat(Rng *rng)
 
 				for (uint64_t i = 0; i < count; i++)
 				{
-					simd_float2 position = positions[i] * self.scaleFactor;
-					simd_float2 size = sizes[i] * self.scaleFactor;
-					float blurRadius = blurRadii[i] * self.scaleFactor;
+					simd_float2 position = positions[i] * downscaledScaleFactor;
+					simd_float2 size = sizes[i] * downscaledScaleFactor;
+					float blurRadius = blurRadii[i] * downscaledScaleFactor;
 
 					[computeEncoder setBytes:&position
 					                  length:sizeof(position)
@@ -440,32 +529,29 @@ RngNextFloat(Rng *rng)
 					                  length:sizeof(blurRadius)
 					                 atIndex:4];
 
-					[computeEncoder
-					              dispatchThreads:MTLSizeMake(
-					                                      (NSUInteger)size.x,
-					                                      (NSUInteger)size.y, 1)
-					        threadsPerThreadgroup:MTLSizeMake(32, 32, 1)];
+					MTLSize gridSize = MTLSizeMake((NSUInteger)ceilf(size.x),
+					        (NSUInteger)ceilf(size.y), 1);
+
+					[computeEncoder dispatchThreads:gridSize
+					          threadsPerThreadgroup:MTLSizeMake(32, 32, 1)];
 				}
 
 				[computeEncoder endEncoding];
-
-				continue;
 			}
+			break;
 
-			case BlurImplementation_SampleEveryPixelLineCache:
+			case BlurImplementationAlgo_LineCache:
 			{
 				id<MTLComputeCommandEncoder> computeEncoder =
 				        [commandBuffer computeCommandEncoderWithDispatchType:
 				                               MTLDispatchTypeSerial];
 
-				uint16_t threadgroupLength =
-				        (uint16_t)self.pipelineStateBlurSampleEveryPixelLineCache
-				                .maxTotalThreadsPerThreadgroup;
+				uint16_t threadgroupLength = (uint16_t)self.pipelineStateLineCache
+				                                     .maxTotalThreadsPerThreadgroup;
 				MTLSize threadgroupSize = {0};
 
 				[computeEncoder
-				        setComputePipelineState:
-				                self.pipelineStateBlurSampleEveryPixelLineCache];
+				        setComputePipelineState:self.pipelineStateLineCache];
 
 				[computeEncoder setThreadgroupMemoryLength:sizeof(simd_float4) *
 				                                           threadgroupLength
@@ -483,8 +569,8 @@ RngNextFloat(Rng *rng)
 				[computeEncoder setBytes:&horizontal
 				                  length:sizeof(horizontal)
 				                 atIndex:0];
-				[computeEncoder setBytes:&resolution
-				                  length:sizeof(resolution)
+				[computeEncoder setBytes:&downscaledResolution
+				                  length:sizeof(downscaledResolution)
 				                 atIndex:1];
 
 				[computeEncoder setTexture:destinationTexture atIndex:0];
@@ -493,8 +579,9 @@ RngNextFloat(Rng *rng)
 				for (uint64_t i = 0; i < count; i++)
 				{
 					simd_float2 positionUnrounded =
-					        positions[i] * self.scaleFactor;
-					simd_float2 sizeUnrounded = sizes[i] * self.scaleFactor;
+					        positions[i] * downscaledScaleFactor;
+					simd_float2 sizeUnrounded =
+					        sizes[i] * downscaledScaleFactor;
 
 					simd_float2 p0Unrounded = positionUnrounded;
 					simd_float2 p1Unrounded = positionUnrounded + sizeUnrounded;
@@ -509,7 +596,7 @@ RngNextFloat(Rng *rng)
 
 					simd_ushort2 size = p1 - p0;
 
-					float blurRadius = blurRadii[i] * self.scaleFactor;
+					float blurRadius = blurRadii[i] * downscaledScaleFactor;
 
 					// To avoid a performance cliff at high blur radii, make
 					// sure there’s at least eight output-generating threads in
@@ -571,71 +658,9 @@ RngNextFloat(Rng *rng)
 				}
 
 				[computeEncoder endEncoding];
-
-				continue;
 			}
-
-			case BlurImplementation_SampleEveryPixel:
-			case BlurImplementation_SamplePixelQuads:
-			case BlurImplementation_SampleEveryPixelQuarterRes:
-			case BlurImplementation_SamplePixelQuadsQuarterRes:
-			case BlurImplementation__Count: break;
+			break;
 		}
-
-		MTLRenderPassDescriptor *descriptor =
-		        [MTLRenderPassDescriptor renderPassDescriptor];
-		descriptor.colorAttachments[0].texture = destinationTexture;
-		descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
-		descriptor.colorAttachments[0].loadAction = MTLLoadActionDontCare;
-
-		encoder = [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
-
-		switch (self.blurImplementation)
-		{
-			case BlurImplementation_SampleEveryPixel:
-			case BlurImplementation_SampleEveryPixelQuarterRes:
-				[encoder setRenderPipelineState:
-				                 self.pipelineStateBlurSampleEveryPixel];
-				break;
-
-			case BlurImplementation_SamplePixelQuads:
-			case BlurImplementation_SamplePixelQuadsQuarterRes:
-				[encoder setRenderPipelineState:
-				                 self.pipelineStateBlurSamplePixelQuads];
-				break;
-
-			case BlurImplementation_SampleEveryPixelCompute:
-			case BlurImplementation_SampleEveryPixelLineCache:
-			case BlurImplementation__Count: break;
-		}
-
-		[encoder setVertexBytes:&resolution length:sizeof(resolution) atIndex:0];
-		[encoder setVertexBytes:&_scaleFactor length:sizeof(_scaleFactor) atIndex:1];
-		[encoder setVertexBytes:&outputScaleFactor
-		                 length:sizeof(outputScaleFactor)
-		                atIndex:2];
-		[encoder setVertexBytes:positions length:sizeof(simd_float2) * count atIndex:3];
-		[encoder setVertexBytes:sizes length:sizeof(simd_float2) * count atIndex:4];
-
-		simd_float2 downscaledResolution = resolution * outputScaleFactor;
-		float downscaledScaleFactor = self.scaleFactor * outputScaleFactor;
-
-		[encoder setFragmentBytes:&downscaledResolution
-		                   length:sizeof(downscaledResolution)
-		                  atIndex:0];
-		[encoder setFragmentBytes:&downscaledScaleFactor
-		                   length:sizeof(downscaledScaleFactor)
-		                  atIndex:1];
-		[encoder setFragmentBytes:&horizontal length:sizeof(horizontal) atIndex:2];
-		[encoder setFragmentBytes:blurRadii length:sizeof(float) * count atIndex:3];
-		[encoder setFragmentTexture:sourceTexture atIndex:0];
-
-		[encoder drawPrimitives:MTLPrimitiveTypeTriangle
-		            vertexStart:0
-		            vertexCount:6
-		          instanceCount:count];
-
-		[encoder endEncoding];
 	}
 
 	return destinationTexture;

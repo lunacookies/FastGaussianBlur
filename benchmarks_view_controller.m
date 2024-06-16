@@ -108,12 +108,14 @@ NSString *BlurRadiusColumnIdentifier = @"BlurRadius";
 {
 	self.resultsTableView = [[NSTableView alloc] init];
 	self.resultsTableView.allowsColumnReordering = NO;
+	self.resultsTableView.allowsColumnResizing = NO;
 
 	NSTableColumn *blurRadiusColumn =
 	        [[NSTableColumn alloc] initWithIdentifier:BlurRadiusColumnIdentifier];
 	blurRadiusColumn.title = @"Blur Radius";
-	blurRadiusColumn.width = 80;
 	blurRadiusColumn.resizingMask = 0;
+	[blurRadiusColumn sizeToFit];
+	blurRadiusColumn.width += 50;
 	[self.resultsTableView addTableColumn:blurRadiusColumn];
 
 	for (BlurImplementation blurImplementation = 0;
@@ -122,9 +124,10 @@ NSString *BlurRadiusColumnIdentifier = @"BlurRadius";
 		NSTableColumn *durationColumn = [[NSTableColumn alloc]
 		        initWithIdentifier:[[NSString alloc] initWithFormat:@"Duration %d",
 		                                             blurImplementation]];
-		durationColumn.title = BlurImplementationNames[blurImplementation];
-		durationColumn.width = 160;
+		durationColumn.title = StringFromBlurImplementation(blurImplementation);
 		durationColumn.resizingMask = 0;
+		[durationColumn sizeToFit];
+		durationColumn.width += 10;
 		[self.resultsTableView addTableColumn:durationColumn];
 	}
 
@@ -230,7 +233,7 @@ RunBenchmark(NSProgress *progress, NSTableViewDiffableDataSource *dataSource)
 	for (BlurImplementation blurImplementation = 0;
 	        blurImplementation < BlurImplementation__Count; blurImplementation++)
 	{
-		[csv appendFormat:@",%@", BlurImplementationNames[blurImplementation]];
+		[csv appendFormat:@",%@", StringFromBlurImplementation(blurImplementation)];
 	}
 	[csv appendString:@"\n"];
 

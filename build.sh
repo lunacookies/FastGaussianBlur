@@ -26,6 +26,7 @@ clang -o build/FastGaussianBlur.app/Contents/MacOS/FastGaussianBlur \
 	-Wshadow \
 	-Wstrict-prototypes \
 	-Wno-unused-parameter \
+	-Wno-gnu-binary-literal \
 	entry_point.m
 
 xcrun metal \
