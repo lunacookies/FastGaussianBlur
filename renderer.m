@@ -230,7 +230,7 @@ RngNextFloat(Rng *rng)
 		        [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
 
 		[self drawBoxesWithEncoder:encoder
-		               blurTexture:self.offscreenTexture1
+		               blurTexture:nil
 		                 positions:self.boxPositions
 		                     sizes:self.boxSizes
 		                    colors:self.boxColors

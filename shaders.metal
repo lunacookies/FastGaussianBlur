@@ -52,6 +52,11 @@ Vertex(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]], constant 
 fragment float4
 Fragment(RasterizerData input [[stage_in]], metal::texture2d<float> blur_texture)
 {
+	if (metal::is_null_texture(blur_texture))
+	{
+		return input.color;
+	}
+
 	metal::sampler sampler(metal::filter::linear);
 	float4 blurred_color = blur_texture.sample(sampler, input.position_uv);
 
