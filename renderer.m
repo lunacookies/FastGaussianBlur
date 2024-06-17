@@ -659,7 +659,7 @@ RngNextFloat(Rng *rng)
 	MTLTextureDescriptor *descriptor = [[MTLTextureDescriptor alloc] init];
 	descriptor.width = (NSUInteger)(self.size.x * self.scaleFactor);
 	descriptor.height = (NSUInteger)(self.size.y * self.scaleFactor);
-	descriptor.self.pixelFormat = self.pixelFormat;
+	descriptor.pixelFormat = self.pixelFormat;
 	descriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead |
 	                   MTLTextureUsageShaderWrite;
 	descriptor.storageMode = MTLStorageModePrivate;
