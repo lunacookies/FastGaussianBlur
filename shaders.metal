@@ -82,8 +82,8 @@ BlurVertex(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]],
 	BlurRasterizerData output = {0};
 	float2 uv = UVFromScreenSpace(vertex_id, position, size, resolution);
 	output.position = NDCFromUV(uv);
-	output.p0 = position * output_scale_factor;
-	output.p1 = (position + size) * output_scale_factor;
+	output.p0 = metal::max(position, 0) * output_scale_factor;
+	output.p1 = metal::min(position + size, resolution) * output_scale_factor;
 	output.instance_id = instance_id;
 	return output;
 }
@@ -98,7 +98,7 @@ float4
 Blur(BlurRasterizerData input, float2 resolution, float blur_radius, uint horizontal,
         metal::texture2d<float> behind, float sample_offset_step, float sample_offset_nudge)
 {
-	metal::sampler sampler(metal::filter::linear, metal::address::mirrored_repeat);
+	metal::sampler sampler(metal::filter::linear);
 
 	float sigma = blur_radius * 0.2;
 	short kernel_radius = (short)blur_radius;
