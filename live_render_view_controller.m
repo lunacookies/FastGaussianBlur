@@ -140,7 +140,7 @@ struct BlurImplementationRadioButtons
 	[self.inspector addArrangedSubview:self.blurRadiusLabel];
 
 	self.blurRadiusSlider = [NSSlider sliderWithValue:50
-	                                         minValue:FLT_EPSILON
+	                                         minValue:0.05
 	                                         maxValue:150
 	                                           target:self
 	                                           action:@selector(updateConfiguration:)];

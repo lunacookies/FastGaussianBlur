@@ -540,7 +540,8 @@ RngNextFloat(Rng *rng)
 
 				[encoder setComputePipelineState:self.pipelineStateLineCache];
 
-				[encoder setThreadgroupMemoryLength:sizeof(simd_float4) *
+				[encoder setThreadgroupMemoryLength:sizeof(_Float16 __attribute__((
+				                                            ext_vector_type(4)))) *
 				                                    threadgroupLength
 				                            atIndex:0];
 
