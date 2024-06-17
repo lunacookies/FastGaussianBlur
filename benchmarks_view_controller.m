@@ -201,7 +201,7 @@ RunBenchmark(NSProgress *progress, NSTableViewDiffableDataSource *dataSource)
 	uint64_t height = 900;
 	simd_float2 size = {(float)width / scaleFactor, (float)height / scaleFactor};
 
-	MTLPixelFormat pixelFormat = MTLPixelFormatBGRA8Unorm;
+	MTLPixelFormat pixelFormat = MTLPixelFormatRGBA16Float;
 
 	id<MTLDevice> device = MTLCreateSystemDefaultDevice();
 
@@ -237,8 +237,7 @@ RunBenchmark(NSProgress *progress, NSTableViewDiffableDataSource *dataSource)
 	}
 	[csv appendString:@"\n"];
 
-	Renderer *renderer = [[Renderer alloc] initWithDevice:device
-	                                          pixelFormat:MTLPixelFormatBGRA8Unorm];
+	Renderer *renderer = [[Renderer alloc] initWithDevice:device pixelFormat:pixelFormat];
 	[renderer setSize:size scaleFactor:scaleFactor];
 
 	for (float blurRadius = blurRadiusMinimum; blurRadius <= blurRadiusMaximum;

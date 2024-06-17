@@ -24,6 +24,11 @@
 	self.metalLayer.device = self.device;
 	self.metalLayer.framebufferOnly = NO;
 
+	// Setting the pixel format to F16 silently sets the color space to linear sRGB, so we have
+	// to explicitly disable color-matching to get back the default behavior.
+	self.metalLayer.pixelFormat = MTLPixelFormatRGBA16Float;
+	self.metalLayer.colorspace = nil;
+
 	self.renderer = [[Renderer alloc] initWithDevice:self.device
 	                                     pixelFormat:self.metalLayer.pixelFormat];
 
