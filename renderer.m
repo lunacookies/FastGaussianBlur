@@ -5,6 +5,7 @@ typedef enum : BlurImplementation
 	BlurImplementationAlgo_Fragment = 0b00 << 2,
 	BlurImplementationAlgo_Compute = 0b01 << 2,
 	BlurImplementationAlgo_LineCache = 0b10 << 2,
+	BlurImplementationAlgo_MPS = 0b11 << 2,
 } BlurImplementationAlgo;
 
 enum : BlurImplementation
@@ -12,7 +13,7 @@ enum : BlurImplementation
 	BlurImplementationFlag_TextureFiltering = 1 << 0,
 	BlurImplementationFlag_QuarterRes = 1 << 1,
 	BlurImplementation_AlgoMask = 0b11 << 2,
-	BlurImplementation__Count = 0b1011 + 1,
+	BlurImplementation__Count = 0b1111 + 1,
 };
 
 static NSString *
@@ -26,6 +27,7 @@ StringFromBlurImplementation(BlurImplementation implementation)
 		case BlurImplementationAlgo_Fragment: [result appendString:@"Fragment"]; break;
 		case BlurImplementationAlgo_Compute: [result appendString:@"Compute"]; break;
 		case BlurImplementationAlgo_LineCache: [result appendString:@"Line Cache"]; break;
+		case BlurImplementationAlgo_MPS: [result appendString:@"MPS"]; break;
 	}
 
 	if (implementation & BlurImplementationFlag_TextureFiltering)
@@ -62,6 +64,8 @@ StringFromBlurImplementation(BlurImplementation implementation)
 @property id<MTLComputePipelineState> pipelineStateLineCache;
 
 @property MPSImageBilinearScale *downscaleKernel;
+@property MPSImageGaussianBlur *blurKernel;
+@property MPSImageGaussianBlur *blurKernelQuarterRes;
 
 @property uint64_t boxCount;
 @property simd_float2 *boxPositions;
@@ -99,6 +103,9 @@ RngNextFloat(Rng *rng)
 }
 
 @implementation Renderer
+{
+	float _blurRadius;
+}
 
 - (instancetype)initWithDevice:(id<MTLDevice>)device pixelFormat:(MTLPixelFormat)pixelFormat
 {
@@ -646,6 +653,25 @@ RngNextFloat(Rng *rng)
 				[encoder endEncoding];
 			}
 			break;
+
+			case BlurImplementationAlgo_MPS:
+			{
+				if (self.blurImplementation & BlurImplementationFlag_QuarterRes)
+				{
+					[self.blurKernelQuarterRes
+					        encodeToCommandBuffer:commandBuffer
+					                sourceTexture:sourceTexture
+					           destinationTexture:destinationTexture];
+				}
+				else
+				{
+					[self.blurKernel encodeToCommandBuffer:commandBuffer
+					                         sourceTexture:sourceTexture
+					                    destinationTexture:destinationTexture];
+				}
+				return destinationTexture;
+			}
+			break;
 		}
 	}
 
@@ -677,6 +703,22 @@ RngNextFloat(Rng *rng)
 	self.offscreenTextureQuarterRes2 = [self.device newTextureWithDescriptor:descriptor];
 	self.offscreenTextureQuarterRes1.label = @"¼ Res Offscreen Texture 1";
 	self.offscreenTextureQuarterRes2.label = @"¼ Res Offscreen Texture 2";
+}
+
+- (float)blurRadius
+{
+	return _blurRadius;
+}
+
+- (void)setBlurRadius:(float)blurRadius
+{
+	_blurRadius = blurRadius;
+	self.blurKernel = [[MPSImageGaussianBlur alloc]
+	        initWithDevice:self.device
+	                 sigma:self.blurRadius * self.scaleFactor * 0.2f];
+	self.blurKernelQuarterRes = [[MPSImageGaussianBlur alloc]
+	        initWithDevice:self.device
+	                 sigma:self.blurRadius * self.scaleFactor * 0.2f * 0.5f];
 }
 
 @end
