@@ -33,8 +33,12 @@ struct RasterizerData
 };
 
 vertex RasterizerData
-Vertex(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]], constant float2 &resolution,
-        constant float &scale_factor, const device float2 *positions, const device float2 *sizes,
+Vertex(uint vertex_id [[vertex_id]],
+        uint instance_id [[instance_id]],
+        constant float2 &resolution,
+        constant float &scale_factor,
+        const device float2 *positions,
+        const device float2 *sizes,
         const device float4 *colors)
 {
 	float2 position = positions[instance_id] * scale_factor;
@@ -76,9 +80,12 @@ struct BlurRasterizerData
 };
 
 vertex BlurRasterizerData
-BlurVertex(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]],
-        constant float2 &resolution, constant float &scale_factor,
-        constant float &output_scale_factor, const device float2 *positions,
+BlurVertex(uint vertex_id [[vertex_id]],
+        uint instance_id [[instance_id]],
+        constant float2 &resolution,
+        constant float &scale_factor,
+        constant float &output_scale_factor,
+        const device float2 *positions,
         const device float2 *sizes)
 {
 	float2 position = positions[instance_id] * scale_factor;
@@ -100,8 +107,13 @@ Gaussian(half sigma, half x)
 }
 
 half4
-Blur(BlurRasterizerData input, float2 resolution, float blur_radius, uint horizontal,
-        metal::texture2d<half> behind, float sample_offset_step, float sample_offset_nudge)
+Blur(BlurRasterizerData input,
+        float2 resolution,
+        float blur_radius,
+        uint horizontal,
+        metal::texture2d<half> behind,
+        float sample_offset_step,
+        float sample_offset_nudge)
 {
 	metal::sampler sampler(metal::filter::linear);
 
@@ -155,8 +167,11 @@ Blur(BlurRasterizerData input, float2 resolution, float blur_radius, uint horizo
 }
 
 fragment half4
-BlurFragmentNoTextureFiltering(BlurRasterizerData input [[stage_in]], constant float2 &resolution,
-        constant float &scale_factor, constant uint &horizontal, const device float *blur_radii,
+BlurFragmentNoTextureFiltering(BlurRasterizerData input [[stage_in]],
+        constant float2 &resolution,
+        constant float &scale_factor,
+        constant uint &horizontal,
+        const device float *blur_radii,
         metal::texture2d<half> behind)
 {
 	float blur_radius = blur_radii[input.instance_id] * scale_factor;
@@ -164,8 +179,11 @@ BlurFragmentNoTextureFiltering(BlurRasterizerData input [[stage_in]], constant f
 }
 
 fragment half4
-BlurFragmentTextureFiltering(BlurRasterizerData input [[stage_in]], constant float2 &resolution,
-        constant float &scale_factor, constant uint &horizontal, const device float *blur_radii,
+BlurFragmentTextureFiltering(BlurRasterizerData input [[stage_in]],
+        constant float2 &resolution,
+        constant float &scale_factor,
+        constant uint &horizontal,
+        const device float *blur_radii,
         metal::texture2d<half> behind)
 {
 	float blur_radius = blur_radii[input.instance_id] * scale_factor;
@@ -174,9 +192,13 @@ BlurFragmentTextureFiltering(BlurRasterizerData input [[stage_in]], constant flo
 
 kernel void
 BlurComputeNoTextureFiltering(uint2 thread_position_int [[thread_position_in_grid]],
-        constant uint &horizontal, constant float2 &resolution, constant float2 &position,
-        constant float2 &size, constant float &blur_radius,
-        metal::texture2d<half, metal::access::write> destination, metal::texture2d<half> source)
+        constant uint &horizontal,
+        constant float2 &resolution,
+        constant float2 &position,
+        constant float2 &size,
+        constant float &blur_radius,
+        metal::texture2d<half, metal::access::write> destination,
+        metal::texture2d<half> source)
 {
 	float2 thread_position = position + (float2)thread_position_int + 0.5;
 	thread_position_int += (uint2)position;
@@ -192,9 +214,13 @@ BlurComputeNoTextureFiltering(uint2 thread_position_int [[thread_position_in_gri
 
 kernel void
 BlurComputeTextureFiltering(uint2 thread_position_int [[thread_position_in_grid]],
-        constant uint &horizontal, constant float2 &resolution, constant float2 &position,
-        constant float2 &size, constant float &blur_radius,
-        metal::texture2d<half, metal::access::write> destination, metal::texture2d<half> source)
+        constant uint &horizontal,
+        constant float2 &resolution,
+        constant float2 &position,
+        constant float2 &size,
+        constant float &blur_radius,
+        metal::texture2d<half, metal::access::write> destination,
+        metal::texture2d<half> source)
 {
 	float2 thread_position = position + (float2)thread_position_int + 0.5;
 	thread_position_int += (uint2)position;
@@ -209,8 +235,11 @@ BlurComputeTextureFiltering(uint2 thread_position_int [[thread_position_in_grid]
 }
 
 void
-PopulateLineCache(ushort thread_index_in_threadgroup, threadgroup half4 *line_cache,
-        ushort2 position_in_image, float2 resolution, metal::texture2d<half> behind)
+PopulateLineCache(ushort thread_index_in_threadgroup,
+        threadgroup half4 *line_cache,
+        ushort2 position_in_image,
+        float2 resolution,
+        metal::texture2d<half> behind)
 {
 	metal::sampler sampler(metal::filter::linear, metal::address::mirrored_repeat);
 	float2 sample_position = ((float2)position_in_image + 0.5) / resolution;
@@ -221,8 +250,13 @@ PopulateLineCache(ushort thread_index_in_threadgroup, threadgroup half4 *line_ca
 }
 
 half4
-BlurAtImagePositionLineCache(ushort thread_index_in_threadgroup, threadgroup half4 *line_cache,
-        uint horizontal, ushort2 position_in_image, ushort2 p0, ushort2 p1, float blur_radius)
+BlurAtImagePositionLineCache(ushort thread_index_in_threadgroup,
+        threadgroup half4 *line_cache,
+        uint horizontal,
+        ushort2 position_in_image,
+        ushort2 p0,
+        ushort2 p1,
+        float blur_radius)
 {
 	half sigma = blur_radius * 0.2h;
 	short kernel_radius = (short)blur_radius;
@@ -267,9 +301,14 @@ BlurLineCache(ushort2 threadgroup_position_in_grid [[threadgroup_position_in_gri
         ushort thread_index_in_threadgroup [[thread_index_in_threadgroup]],
         ushort2 threads_per_threadgroup [[threads_per_threadgroup]],
         ushort2 dispatch_threads_per_threadgroup [[dispatch_threads_per_threadgroup]],
-        constant uint &horizontal, constant float2 &resolution, constant ushort2 &p0,
-        constant ushort2 &p1, constant float &blur_radius, threadgroup half4 *line_cache,
-        metal::texture2d<half, metal::access::write> destination, metal::texture2d<half> source)
+        constant uint &horizontal,
+        constant float2 &resolution,
+        constant ushort2 &p0,
+        constant ushort2 &p1,
+        constant float &blur_radius,
+        threadgroup half4 *line_cache,
+        metal::texture2d<half, metal::access::write> destination,
+        metal::texture2d<half> source)
 {
 	ushort blur_radius_int = (ushort)metal::ceil(blur_radius);
 
